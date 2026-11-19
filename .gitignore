@@ -1,0 +1,10 @@
+node_modules/
+/dist/
+/build/
+/.mygo/
+/.agents/
+/vendor/
+mygo_windows_*.syso
+/final.png
+/ui*.png
+/v[0-9]*.png

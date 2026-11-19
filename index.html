@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FileFeed</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <div class="brand">
+          <span class="logo">◈</span>
+          <span>FileFeed</span>
+          <span class="sub" id="status">就绪</span>
+        </div>
+        <div class="grow"></div>
+        <button class="btn ghost" id="btn-presets">方案</button>
+        <button class="btn ghost" id="btn-settings">设置</button>
+        <button class="btn ghost" id="btn-refresh" title="重新搜索（Ctrl+R）">刷新</button>
+        <button class="btn primary" id="btn-search">搜索</button>
+      </div>
+
+      <div class="filters">
+        <div class="fgroup grow search-group">
+          <label class="flabel" for="kw">搜索</label>
+          <input id="kw" class="input" type="text" placeholder="文件名或路径（可留空）" />
+        </div>
+
+        <div class="fgroup">
+          <span class="flabel">时间</span>
+          <div class="frow">
+            <div class="seg" id="timeMode">
+              <button data-m="past" class="on">过去</button>
+              <button data-m="range">区间</button>
+            </div>
+
+            <div class="past" id="pastBox">
+              <input id="pastValue" class="input num" type="number" min="1" value="24" />
+              <select id="pastUnit" class="input sel">
+                <option value="minute">分钟</option>
+                <option value="hour" selected>小时</option>
+                <option value="day">天</option>
+                <option value="week">周</option>
+              </select>
+            </div>
+
+            <div class="range hide" id="rangeBox">
+              <input id="from" class="input dt" type="datetime-local" />
+              <span class="tilde">→</span>
+              <input id="to" class="input dt" type="datetime-local" />
+            </div>
+
+            <select id="timeField" class="input sel">
+              <option value="created" selected>按创建时间</option>
+              <option value="modified">按修改时间</option>
+            </select>
+
+            <select id="sortBy" class="input sel">
+              <option value="time" selected>按时间</option>
+              <option value="size">按大小</option>
+              <option value="name">按名称</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="filters">
+        <div class="fgroup grow">
+          <span class="flabel">类型</span>
+          <div class="frow">
+            <div id="typeChips" class="chips"></div>
+            <button class="btn tiny ghost" id="btn-types">编辑</button>
+          </div>
+        </div>
+
+        <div class="fgroup">
+          <span class="flabel">快捷</span>
+          <div class="frow">
+            <button class="btn tiny ghost" data-group="doc">文档</button>
+            <button class="btn tiny ghost" data-group="code">代码</button>
+            <button class="btn tiny ghost" data-group="image">图片</button>
+            <button class="btn tiny ghost" data-group="video">视频</button>
+            <button class="btn tiny ghost" data-group="audio">音频</button>
+            <button class="btn tiny ghost" data-group="archive">压缩包</button>
+            <button class="btn tiny ghost" data-group="clear">清空</button>
+          </div>
+        </div>
+      </div>
+
+    </header>
+
+    <nav id="formatNav" class="format-nav hide" aria-label="跳转到文件格式"></nav>
+    <div id="selBar" class="selbar hide">
+      <span class="selcount">已选 <b id="selCount">0</b> 个文件</span>
+      <div class="selacts">
+        <button class="act" data-bulk="open"><i>▶</i>打开</button>
+        <button class="act" data-bulk="reveal"><i>⌖</i>位置</button>
+        <button class="act" data-bulk="path"><i>⌘</i>路径</button>
+        <button class="act" data-bulk="copy"><i>⧉</i>复制</button>
+        <button class="act danger" data-bulk="delete"><i>✕</i>删除</button>
+      </div>
+      <div class="grow"></div>
+      <button class="btn tiny ghost" id="btnClearSel">取消选择</button>
+    </div>
+
+    <main id="grid" aria-label="搜索结果" tabindex="0">
+      <div id="waterfall" class="waterfall"></div>
+    </main>
+
+    <footer id="foot">
+      <span id="footStat">—</span>
+      <span class="grow"></span>
+      <span id="footRange" class="muted"></span>
+    </footer>
+
+    <!-- 设置 -->
+    <div class="modal hide" id="modalSettings">
+      <div class="sheet">
+        <h2>设置</h2>
+        <label>监控的文件类型（逗号或换行分隔，不带点）</label>
+        <textarea id="cfgExts" rows="5"></textarea>
+        <label>排除路径片段（每行一个，不区分大小写）</label>
+        <textarea id="cfgExclude" rows="5"></textarea>
+        <div class="settings-options">
+          <div>
+            <label for="cfgLimit">每个类型最多显示</label>
+            <input id="cfgLimit" class="input num" type="number" min="20" max="5000" />
+          </div>
+          <div>
+            <label for="cfgRefresh">自动刷新间隔</label>
+            <select id="cfgRefresh" class="input sel">
+              <option value="5">5 秒</option>
+              <option value="10">10 秒</option>
+              <option value="15">15 秒</option>
+              <option value="30">30 秒</option>
+              <option value="60" selected>60 秒</option>
+            </select>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost" data-close="modalSettings">取消</button>
+          <button class="btn primary" id="btnSaveCfg">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 -->
+    <div class="modal hide" id="modalPresets">
+      <div class="sheet">
+        <h2>筛选方案</h2>
+        <p class="muted small">把当前的类型、时间、关键词、排序存成一套方案，下次一键切换。</p>
+        <div id="presetList" class="preset-list"></div>
+        <div class="preset-add">
+          <input id="presetName" class="input" placeholder="方案名称，例如「本周 magpie 文档」" />
+          <button class="btn primary" id="btnAddPreset">保存当前</button>
+        </div>
+        <div class="foot">
+          <button class="btn ghost" data-close="modalPresets">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
