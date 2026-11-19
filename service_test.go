@@ -30,6 +30,25 @@ func TestRefreshConfig(t *testing.T) {
 	}
 }
 
+func TestQuickTypesConfig(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	s := Service{}
+	cfg := s.Config()
+	if len(cfg.QuickTypes) != 0 {
+		t.Fatal("legacy config should use the built-in shortcuts")
+	}
+	cfg.QuickTypes["video"] = []string{"mp4", "webm"}
+	cfg.QuickTypes["audio"] = []string{}
+	s.SaveConfig(cfg)
+	loaded := s.Config().QuickTypes
+	if video := loaded["video"]; len(video) != 2 || video[0] != "mp4" || video[1] != "webm" {
+		t.Fatalf("wrong saved video shortcut: %v", video)
+	}
+	if audio, exists := loaded["audio"]; !exists || len(audio) != 0 {
+		t.Fatalf("an unchecked category must stay empty: %v %v", audio, exists)
+	}
+}
+
 func TestSearch(t *testing.T) {
 	s := Service{}
 	res := s.Search(SearchQuery{

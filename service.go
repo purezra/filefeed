@@ -15,31 +15,34 @@ import (
 
 // SearchQuery 是一次检索的全部条件，前端整包传过来。
 type SearchQuery struct {
-	Exts      []string `json:"exts"`      // 扩展名（不带点），空 = 不限（会很慢）
-	Keyword   string   `json:"keyword"`   // 文件名/路径包含的关键词
-	Mode      string   `json:"mode"`      // "past" 过去一段时间 | "range" 自定义区间
-	PastValue int      `json:"pastValue"` // 配合 PastUnit
-	PastUnit  string   `json:"pastUnit"`  // minute | hour | day | week
-	From      string   `json:"from"`      // "2006-01-02T15:04" 本地时间
-	To        string   `json:"to"`
-	TimeField string   `json:"timeField"` // "created" | "modified"
-	Exclude   []string `json:"exclude"`   // 路径包含这些片段就跳过（不区分大小写）
-	Limit     int      `json:"limit"`     // 每个类型最多返回多少条
-	SortBy    string   `json:"sortBy"`    // "time" | "size" | "name"
+	Exts      []string    `json:"exts"`      // 扩展名（不带点），空 = 不限（会很慢）
+	Keyword   string      `json:"keyword"`   // 文件名/路径包含的关键词
+	Mode      string      `json:"mode"`      // "past" 过去一段时间 | "range" 自定义区间
+	PastValue int         `json:"pastValue"` // 配合 PastUnit
+	PastUnit  string      `json:"pastUnit"`  // minute | hour | day | week
+	From      string      `json:"from"`      // "2006-01-02T15:04" 本地时间
+	To        string      `json:"to"`
+	TimeField string      `json:"timeField"` // "created" | "modified"
+	Exclude   []string    `json:"exclude"`   // 路径包含这些片段就跳过（不区分大小写）
+	Limit     int         `json:"limit"`     // 每个类型最多返回多少条
+	SortBy    string      `json:"sortBy"`    // "time" | "size" | "name"
+	Image     ImageFilter `json:"image"`
+	Video     VideoFilter `json:"video"`
 }
 
 // FileItem 是结果里的一行。
 type FileItem struct {
-	Path       string `json:"path"`
-	Name       string `json:"name"`
-	Dir        string `json:"dir"`
-	Ext        string `json:"ext"`
-	Size       int64  `json:"size"`
-	SizeText   string `json:"sizeText"`
-	CreatedAt  int64  `json:"createdAt"` // 秒
-	ModifiedAt int64  `json:"modifiedAt"`
-	Stamp      int64  `json:"stamp"` // 参与排序/过滤的那个时间
-	IsNew      bool   `json:"isNew"`
+	Path       string          `json:"path"`
+	Name       string          `json:"name"`
+	Dir        string          `json:"dir"`
+	Ext        string          `json:"ext"`
+	Size       int64           `json:"size"`
+	SizeText   string          `json:"sizeText"`
+	CreatedAt  int64           `json:"createdAt"` // 秒
+	ModifiedAt int64           `json:"modifiedAt"`
+	Stamp      int64           `json:"stamp"` // 参与排序/过滤的那个时间
+	IsNew      bool            `json:"isNew"`
+	Media      MediaProperties `json:"media"`
 }
 
 // TypeGroup 是按扩展名分好的一组结果。
@@ -51,13 +54,14 @@ type TypeGroup struct {
 
 // SearchResult 是给前端的完整响应。
 type SearchResult struct {
-	OK        bool        `json:"ok"`
-	Error     string      `json:"error"`
-	Groups    []TypeGroup `json:"groups"`
-	Total     int         `json:"total"`
-	ElapsedMs int64       `json:"elapsedMs"`
-	Lo        int64       `json:"lo"`
-	Hi        int64       `json:"hi"`
+	OK           bool        `json:"ok"`
+	Error        string      `json:"error"`
+	Groups       []TypeGroup `json:"groups"`
+	Total        int         `json:"total"`
+	ElapsedMs    int64       `json:"elapsedMs"`
+	Lo           int64       `json:"lo"`
+	Hi           int64       `json:"hi"`
+	MediaSkipped int         `json:"mediaSkipped"`
 }
 
 // Preset 是保存下来的筛选方案。
@@ -68,11 +72,12 @@ type Preset struct {
 
 // Config 是持久化配置。
 type Config struct {
-	Exts           []string `json:"exts"`
-	Exclude        []string `json:"exclude"`
-	Limit          int      `json:"limit"`
-	RefreshSeconds int      `json:"refreshSeconds"`
-	Presets        []Preset `json:"presets"`
+	Exts           []string            `json:"exts"`
+	Exclude        []string            `json:"exclude"`
+	Limit          int                 `json:"limit"`
+	RefreshSeconds int                 `json:"refreshSeconds"`
+	QuickTypes     map[string][]string `json:"quickTypes"`
+	Presets        []Preset            `json:"presets"`
 }
 
 // Service 的方法会被 mygo generate 变成前端的类型化函数。
@@ -104,6 +109,7 @@ func defaultConfig() Config {
 		},
 		Limit:          500,
 		RefreshSeconds: defaultRefreshSeconds,
+		QuickTypes:     map[string][]string{},
 		Presets:        []Preset{},
 	}
 }
@@ -129,6 +135,9 @@ func (Service) Config() Config {
 		cfg.Limit = user.Limit
 	}
 	cfg.RefreshSeconds = validRefreshSeconds(user.RefreshSeconds)
+	if user.QuickTypes != nil {
+		cfg.QuickTypes = user.QuickTypes
+	}
 	if user.Presets != nil {
 		cfg.Presets = user.Presets
 	}
@@ -198,6 +207,11 @@ func fmtSize(n int64) string {
 func (Service) Search(q SearchQuery) SearchResult {
 	start := time.Now()
 	res := SearchResult{OK: true}
+	filters, err := newMediaFilters(q.Image, q.Video)
+	if err != nil {
+		res.OK, res.Error = false, err.Error()
+		return res
+	}
 
 	// 时间窗口
 	now := time.Now()
@@ -301,6 +315,17 @@ func (Service) Search(q SearchQuery) SearchResult {
 		if ext == "" {
 			ext = "(无扩展名)"
 		}
+		matched, missing, media, err := filters.match(ext, p, st)
+		if err != nil {
+			res.OK, res.Error = false, "无法读取媒体属性："+err.Error()
+			return res
+		}
+		if missing {
+			res.MediaSkipped++
+		}
+		if !matched {
+			continue
+		}
 
 		item := FileItem{
 			Path:       p,
@@ -313,6 +338,7 @@ func (Service) Search(q SearchQuery) SearchResult {
 			ModifiedAt: modified.Unix(),
 			Stamp:      stamp.Unix(),
 			IsNew:      !created.Before(lo) && (hi.IsZero() || !created.After(hi)),
+			Media:      media,
 		}
 		counts[ext]++
 		if len(buckets[ext]) < limit {

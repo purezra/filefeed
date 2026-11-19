@@ -1,19 +1,30 @@
-import { Service, type SearchQuery, type Config, type Preset, type TypeGroup, type FileItem } from "./mygo";
+import { Service, type SearchQuery, type Config, type Preset, type TypeGroup, type FileItem, type ImageFilter, type VideoFilter } from "./mygo";
 
 // ------------------------------------------------------------------ 常量
 const TYPE_GROUPS: Record<string, string[]> = {
   doc: ["md", "txt", "doc", "docx", "pdf", "rtf", "odt", "pages"],
   code: ["go", "ts", "tsx", "js", "jsx", "py", "rs", "java", "c", "cpp", "h", "cs", "rb", "php", "sh", "sql", "json", "jsonl", "yaml", "yml", "toml", "xml"],
   image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tif", "tiff", "heic", "avif"],
-  video: ["mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "ts", "mpg", "mpeg"],
+  video: ["mp4", "mkv", "mov", "avi", "flv", "wmv", "m4v", "mpg", "mpeg"],
   audio: ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "wma", "aiff"],
   archive: ["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "zst"],
+};
+const OPTIONAL_TYPES: Record<string, string[]> = {
+  doc: ["xls", "xlsx", "csv", "ppt", "pptx", "epub"],
+  code: ["html", "css", "kt", "swift", "lua", "bat", "ps1", "ini"],
+  image: ["jxl", "jfif", "heif", "apng", "psd", "dng"],
+  video: ["webm", "ts", "mts", "m2ts", "mxf", "3gp", "vob", "ogv"],
+  audio: ["ac3", "mka", "ape", "alac", "amr"],
+  archive: ["tgz", "cab", "iso", "lz4"],
 };
 const MIN_CARD_WIDTH = 440;
 
 // ------------------------------------------------------------------ 状态
 const state = {
   exts: [] as string[],
+  quickGroup: "",
+  presetImageExts: [] as string[],
+  presetVideoExts: [] as string[],
   keyword: "",
   timeMode: "past" as "past" | "range",
   pastValue: 24,
@@ -43,6 +54,7 @@ let searchPending = false;
 let renderedQuery = "";
 let renderedGroups = "";
 let refreshTimer: number | undefined;
+let quickDraft: Record<string, string[]> = {};
 
 // ------------------------------------------------------------------ 小工具
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -137,13 +149,43 @@ function applyRowSel() {
   updateSelBar();
 }
 
-// ------------------------------------------------------------------ 类型 chips
+// ------------------------------------------------------------------ 类型与媒体筛选
+function quickTypes(group: string) {
+  return state.config?.quickTypes?.[group] ?? TYPE_GROUPS[group] ?? [];
+}
+
+function matchesQuickSelection(exts: string[]) {
+  return exts.length > 0 && exts.length === state.exts.length && exts.every((ext) => state.exts.includes(ext));
+}
+
+function mediaTypes(group: "image" | "video") {
+  if (state.quickGroup === "image" || state.quickGroup === "video") {
+    return state.quickGroup === group ? state.exts : [];
+  }
+  const saved = group === "image" ? state.presetImageExts : state.presetVideoExts;
+  const types = new Set([...TYPE_GROUPS[group]!, ...OPTIONAL_TYPES[group]!, ...quickTypes(group), ...saved]);
+  return state.exts.filter((ext) => types.has(ext) && (ext !== "ts" || saved.includes(ext)));
+}
+
+function updateMediaVisibility() {
+  const image = mediaTypes("image").length > 0;
+  const video = mediaTypes("video").length > 0;
+  for (const [id, visible] of [["#imageFilters", image], ["#videoFilters", video]] as const) {
+    const group = $(id);
+    group.classList.toggle("hide", !visible);
+    group.disabled = !visible;
+  }
+  $("#mediaFilters").classList.toggle("hide", !image && !video);
+}
+
 function renderChips() {
   document.querySelectorAll<HTMLButtonElement>("[data-group]:not([data-group=clear])").forEach((button) => {
-    const exts = TYPE_GROUPS[button.dataset.group!]!;
-    const active = exts.length === state.exts.length && exts.every((ext) => state.exts.includes(ext));
+    const exts = quickTypes(button.dataset.group!);
+    const active = matchesQuickSelection(exts) && (!state.quickGroup || state.quickGroup === button.dataset.group);
+    button.disabled = exts.length === 0;
     button.setAttribute("aria-pressed", String(active));
   });
+  updateMediaVisibility();
   const box = $("#typeChips");
   box.innerHTML = "";
   if (!state.exts.length) {
@@ -163,7 +205,22 @@ function renderChips() {
 }
 
 // ------------------------------------------------------------------ 查询
+function restoreMediaInputs(image?: ImageFilter, video?: VideoFilter) {
+  $("#imageRatio").value = image?.ratio ?? "";
+  $("#imageResolutionMode").value = image?.resolutionMode || "min";
+  const numbers = {
+    imageWidth: image?.width, imageHeight: image?.height,
+    imageMinMB: image?.minMB, imageMaxMB: image?.maxMB,
+    videoMinMB: video?.minMB, videoMaxMB: video?.maxMB,
+    videoMinSeconds: video?.minSeconds, videoMaxSeconds: video?.maxSeconds,
+  };
+  for (const [id, value] of Object.entries(numbers)) $("#" + id).value = value || "";
+}
+
 function buildQuery(): SearchQuery {
+  const imageExts = mediaTypes("image");
+  const videoExts = mediaTypes("video").filter((ext) => !imageExts.includes(ext));
+  const mediaNumber = (id: string, exts: string[]) => exts.length ? Number($(id).value) : 0;
   return {
     exts: state.exts,
     keyword: state.keyword,
@@ -176,10 +233,40 @@ function buildQuery(): SearchQuery {
     exclude: state.exclude,
     limit: state.limit,
     sortBy: state.sortBy,
+    image: {
+      exts: imageExts,
+      ratio: imageExts.length ? $("#imageRatio").value.trim() : "",
+      resolutionMode: $("#imageResolutionMode").value,
+      width: mediaNumber("#imageWidth", imageExts), height: mediaNumber("#imageHeight", imageExts),
+      minMB: mediaNumber("#imageMinMB", imageExts), maxMB: mediaNumber("#imageMaxMB", imageExts),
+    },
+    video: {
+      exts: videoExts,
+      minMB: mediaNumber("#videoMinMB", videoExts), maxMB: mediaNumber("#videoMaxMB", videoExts),
+      minSeconds: mediaNumber("#videoMinSeconds", videoExts), maxSeconds: mediaNumber("#videoMaxSeconds", videoExts),
+    },
   };
 }
 
-async function runSearch() {
+function mediaQueryError({ image, video }: SearchQuery) {
+  if ($("#mediaFilters input:invalid")) return "请填写有效的媒体筛选数值";
+  if (image.ratio && !/^(?:横图|竖图|[1-9]\d*\s*[:：]\s*[1-9]\d*)$/.test(image.ratio)) {
+    return "图片比例请填写两个正整数，例如 16:9";
+  }
+  if ((image.maxMB > 0 && image.maxMB < image.minMB) || (video.maxMB > 0 && video.maxMB < video.minMB)) {
+    return "最大大小不能小于最小大小";
+  }
+  if (video.maxSeconds > 0 && video.maxSeconds < video.minSeconds) return "最长时长不能小于最短时长";
+  return "";
+}
+
+async function runSearch(showValidation = true) {
+  const query = buildQuery();
+  const validationError = mediaQueryError(query);
+  if (validationError) {
+    if (showValidation) toast(validationError);
+    return;
+  }
   if (state.busy) {
     searchPending = true;
     return;
@@ -193,7 +280,6 @@ async function runSearch() {
     $("#footRange").textContent = "";
     return;
   }
-  const query = buildQuery();
   state.busy = true;
   setStatus("搜索中…");
   try {
@@ -214,7 +300,8 @@ async function runSearch() {
       renderedGroups = groupKey;
     }
     setStatus(`命中 ${res.total} 条 · ${res.elapsedMs} ms`);
-    $("#footStat").textContent = `命中 ${res.total} 条 · ${groups.length} 种类型 · 用时 ${res.elapsedMs} ms`;
+    $("#footStat").textContent = `命中 ${res.total} 条 · ${groups.length} 种类型 · 用时 ${res.elapsedMs} ms` +
+      (res.mediaSkipped ? ` · ${res.mediaSkipped} 个文件缺少筛选所需属性` : "");
     const lo = res.lo ? fmtTime(res.lo) : "不限";
     const hi = res.hi ? fmtTime(res.hi) : "现在";
     $("#footRange").textContent = `${query.timeField === "created" ? "创建" : "修改"}时间：${lo} → ${hi}`;
@@ -236,7 +323,7 @@ function scheduleAutoRefresh(seconds: number) {
   window.clearInterval(refreshTimer);
   $("#btn-refresh").title = `立即刷新（Ctrl+R） · 自动每 ${seconds} 秒`;
   refreshTimer = window.setInterval(() => {
-    if (!document.hidden && !state.busy && state.exts.length) void runSearch();
+    if (!document.hidden && !state.busy && state.exts.length) void runSearch(false);
   }, seconds * 1000);
 }
 
@@ -436,6 +523,12 @@ function renderFileRow(g: TypeGroup, it: FileItem, idx: number) {
   sub.appendChild(dir);
   sub.appendChild(el("span", "sep", "·"));
   sub.appendChild(el("span", "", it.sizeText));
+  if (it.media.width && it.media.height) {
+    sub.append(el("span", "sep", "·"), el("span", "", `${it.media.width} × ${it.media.height}`));
+  }
+  if (it.media.durationSeconds) {
+    sub.append(el("span", "sep", "·"), el("span", "", `${Number(it.media.durationSeconds.toFixed(2))} 秒`));
+  }
   sub.appendChild(el("span", "sep", "·"));
   sub.appendChild(el("span", "", fmtTime(it.stamp)));
   if (it.isNew) sub.appendChild(el("span", "newtag", "新建"));
@@ -507,6 +600,40 @@ async function act(kind: string, paths: string[]) {
 }
 
 // ------------------------------------------------------------------ 设置
+function renderQuickSettings() {
+  const group = $("#cfgQuickGroup").value as string;
+  const selected = quickDraft[group]!;
+  const choices = new Set([...TYPE_GROUPS[group]!, ...OPTIONAL_TYPES[group]!, ...selected]);
+  const container = $("#cfgQuickTypes");
+  container.replaceChildren();
+  for (const ext of choices) {
+    const label = el("label", "quick-option");
+    const check = el("input");
+    check.type = "checkbox";
+    check.checked = selected.includes(ext);
+    check.onchange = () => {
+      const previous = quickDraft[group]!;
+      quickDraft[group] = check.checked ? [...previous, ext] : previous.filter((item) => item !== ext);
+    };
+    label.append(check, el("span", "", ext));
+    container.appendChild(label);
+  }
+}
+
+function addQuickType() {
+  const input = $("#cfgQuickExt");
+  const ext = input.value.trim().toLowerCase().replace(/^\./, "");
+  if (!/^[a-z0-9][a-z0-9_+-]*$/.test(ext)) {
+    toast("请填写单个扩展名，例如 webm");
+    return;
+  }
+  const group = $("#cfgQuickGroup").value as string;
+  if (!quickDraft[group]!.includes(ext)) quickDraft[group]!.push(ext);
+  input.value = "";
+  renderQuickSettings();
+  input.focus();
+}
+
 async function openSettings() {
   const cfg = await Service.config();
   state.config = cfg;
@@ -514,6 +641,10 @@ async function openSettings() {
   $("#cfgExclude").value = cfg.exclude.join("\n");
   $("#cfgLimit").value = String(cfg.limit);
   $("#cfgRefresh").value = String(cfg.refreshSeconds);
+  quickDraft = Object.fromEntries(Object.keys(TYPE_GROUPS).map((group) => [group, [...quickTypes(group)]]));
+  if (state.quickGroup) $("#cfgQuickGroup").value = state.quickGroup;
+  $("#cfgQuickExt").value = "";
+  renderQuickSettings();
   $("#modalSettings").classList.remove("hide");
 }
 
@@ -529,16 +660,23 @@ async function saveSettings() {
   const limit = Math.max(20, Math.min(5000, parseInt($("#cfgLimit").value) || 500));
   const refreshSeconds = Number($("#cfgRefresh").value);
   const typesChanged = exts.join("\n") !== state.config?.exts.join("\n");
+  const updateActiveGroup = state.quickGroup && matchesQuickSelection(quickTypes(state.quickGroup));
 
   const cfg = await Service.saveConfig({
     exts,
     exclude,
     limit,
     refreshSeconds,
+    quickTypes: quickDraft,
     presets: state.config?.presets ?? [],
   });
   state.config = cfg;
-  if (typesChanged) state.exts = cfg.exts;
+  if (updateActiveGroup) {
+    state.exts = [...quickTypes(state.quickGroup)];
+  } else if (typesChanged) {
+    state.exts = cfg.exts;
+    state.quickGroup = "";
+  }
   state.exclude = cfg.exclude;
   state.limit = cfg.limit;
   scheduleAutoRefresh(cfg.refreshSeconds);
@@ -557,6 +695,8 @@ function presetDesc(q: SearchQuery) {
   const parts = [t];
   if (q.keyword) parts.push(`含「${q.keyword}」`);
   if (q.exts?.length) parts.push(q.exts.slice(0, 4).join("/") + (q.exts.length > 4 ? ` 等${q.exts.length}种` : ""));
+  if (q.image?.ratio || q.image?.width || q.image?.height || q.image?.minMB || q.image?.maxMB) parts.push("图片筛选");
+  if (q.video?.minMB || q.video?.maxMB || q.video?.minSeconds || q.video?.maxSeconds) parts.push("视频筛选");
   return parts.join(" · ");
 }
 
@@ -602,6 +742,9 @@ function renderPresetList(list: Preset[]) {
 
 function applyQuery(q: SearchQuery) {
   state.exts = q.exts ?? [];
+  state.quickGroup = "";
+  state.presetImageExts = q.image?.exts ?? [];
+  state.presetVideoExts = q.video?.exts ?? [];
   state.keyword = q.keyword ?? "";
   state.timeMode = (q.mode === "range" ? "range" : "past") as "past" | "range";
   state.pastValue = q.pastValue || 24;
@@ -623,14 +766,18 @@ function applyQuery(q: SearchQuery) {
   });
   $("#pastBox").classList.toggle("hide", state.timeMode !== "past");
   $("#rangeBox").classList.toggle("hide", state.timeMode !== "range");
+  restoreMediaInputs(q.image, q.video);
   renderChips();
 }
 
 async function addPreset() {
   const name = $("#presetName").value.trim();
   if (!name) { toast("先给方案起个名字"); return; }
+  const query = buildQuery();
+  const validationError = mediaQueryError(query);
+  if (validationError) { toast(validationError); return; }
   const cfg = state.config ?? (await Service.config());
-  const presets = [...(cfg.presets ?? []), { name, query: buildQuery() }];
+  const presets = [...(cfg.presets ?? []), { name, query }];
   state.config = await Service.saveConfig({ ...cfg, presets });
   $("#presetName").value = "";
   renderPresetList(state.config.presets ?? []);
@@ -674,6 +821,22 @@ function bind() {
   $("#btnSaveCfg").addEventListener("click", () => void saveSettings());
   $("#btnAddPreset").addEventListener("click", () => void addPreset());
   $("#btn-types").addEventListener("click", () => void openSettings());
+  $("#cfgQuickGroup").addEventListener("change", renderQuickSettings);
+  $("#cfgQuickAdd").addEventListener("click", addQuickType);
+  $("#cfgQuickExt").addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key === "Enter") addQuickType();
+  });
+  $("#mediaFilters").addEventListener("change", () => void runSearch());
+  $("#mediaFilters").addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement) void runSearch();
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-reset-media]").forEach((button) => {
+    button.onclick = () => {
+      button.closest("fieldset")?.querySelectorAll("input").forEach((input) => { input.value = ""; });
+      if (button.dataset.resetMedia === "image") $("#imageResolutionMode").value = "min";
+      void runSearch();
+    };
+  });
 
   $("#btnClearSel").addEventListener("click", () => {
     sel.clear();
@@ -686,7 +849,11 @@ function bind() {
 
   document.querySelectorAll<HTMLButtonElement>("[data-group]").forEach((b) => {
     b.addEventListener("click", () => {
-      state.exts = [...(TYPE_GROUPS[b.dataset.group!] ?? [])];
+      const group = b.dataset.group!;
+      state.quickGroup = group === "clear" ? "" : group;
+      state.presetImageExts = [];
+      state.presetVideoExts = [];
+      state.exts = group === "clear" ? [] : [...quickTypes(group)];
       renderChips();
       void runSearch();
     });

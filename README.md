@@ -19,7 +19,8 @@ build\windows-amd64\filefeed-setup-0.1.0-amd64.exe    ← 安装包
 
 ## 功能
 
-- 类型多选：任意扩展名，可一键切换到「文档 / 代码 / 图片 / 视频 / 音频 / 压缩包」分类
+- 类型多选：任意扩展名，可一键切换到「文档 / 代码 / 图片 / 视频 / 音频 / 压缩包」分类。各分类包含的扩展名可在设置里勾选，也可以添加自己的扩展名。
+- 图片可按比例、像素分辨率和文件大小筛选，视频可按文件大小和时长筛选。需要读取属性时，结果栏会显示缺少相应属性的文件数。
 - 多格式结果：自适应瀑布流，可跳转到任意格式并独立收起卡片。展开的卡片内可滚动浏览该格式的结果。
 - 时间筛选：过去 N 分钟 / 小时 / 天 / 周，或自定义区间（精确到分钟）
 - 时间依据：按创建时间 或 按修改时间
@@ -58,3 +59,5 @@ MyGo 的 WebView2 采用物理像素作为窗口边界，直接使用 `GetClient
 ## 第三方组件
 
 `assets/es.exe` 来自 voidtools 的 [Everything 命令行工具 ES 1.1.0.27](https://www.voidtools.com/ES-1.1.0.27.x86.zip)。许可文本见 [ES-LICENSE.txt](resources/ES-LICENSE.txt)。
+
+媒体属性由随程序打包的 [MediaInfo 26.10](https://mediaarea.net/en/MediaInfo/Download/Windows) 在本地读取。许可文本见 [MediaInfo-LICENSE.html](resources/MediaInfo-LICENSE.html)。

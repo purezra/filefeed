@@ -150,6 +150,7 @@ header {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.btn[data-group]:disabled { opacity: .55; cursor: default; }
 
 /* ---- 输入控件 ---- */
 .input {
@@ -168,6 +169,27 @@ header {
 .input.num { width: 72px; }
 .input.sel { width: auto; }
 .input.dt { width: 178px; }
+
+.media-filters { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-2); }
+.media-filter, .quick-settings {
+  min-width: 0;
+  margin: 0;
+  padding: 4px var(--sp-2) var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.media-filter legend, .quick-settings legend {
+  padding-inline: 4px;
+  color: var(--tx);
+  font-size: var(--fs-filter);
+  font-weight: 600;
+}
+.media-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2) var(--sp-3); }
+.media-field { display: grid; gap: 2px; color: var(--dim); font-size: var(--fs-label); }
+.media-range { display: flex; gap: var(--sp-1); align-items: center; }
+.media-field .input, .media-fields .btn { min-height: 27px; padding-block: 3px; }
+.media-field .num { width: 68px; }
+.media-field .ratio { width: 122px; }
 
 #kw { width: 100%; }
 
@@ -213,6 +235,21 @@ header {
 .selcount { font-size: var(--fs-filter); color: var(--tx); }
 .selcount b { color: var(--accent); font-size: 14px; }
 .selacts { display: flex; gap: 6px; flex-wrap: wrap; }
+.selacts .act {
+  gap: 6px;
+  min-height: 28px;
+  padding-inline: 9px;
+  background: var(--panel);
+}
+.action-icon {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font: 14px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets";
+}
+.selacts .act:hover { background: var(--accent-soft); color: var(--accent); }
+.selacts .act.danger { color: var(--danger); }
+.selacts .act.danger:hover { background: var(--danger-soft); color: var(--danger); }
 
 /* ---------------- 格式导航 ---------------- */
 .format-nav {
@@ -514,6 +551,27 @@ footer {
 }
 .sheet textarea:focus, .sheet input:focus { border-color: var(--accent); }
 .settings-options { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.quick-settings { margin-top: var(--sp-3); }
+.quick-setting-tools { display: flex; gap: var(--sp-2); margin-block: 2px var(--sp-2); }
+.quick-setting-tools input { flex: 1; min-width: 0; }
+.quick-checkboxes { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.sheet .quick-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.sheet .quick-option input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.sheet .quick-option:has(input:checked) {
+  border-color: var(--line2);
+  background: var(--accent-soft);
+  color: var(--tx);
+}
 .sheet .foot { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
 
 .preset-list { display: flex; flex-direction: column; gap: 6px; margin: var(--sp-2) 0 var(--sp-3); }

@@ -10,6 +10,7 @@ export interface Config {
   exclude: string[];
   limit: number;
   refreshSeconds: number;
+  quickTypes: Record<string, string[]>;
   presets: Preset[];
 }
 
@@ -27,6 +28,23 @@ export interface FileItem {
   /** 参与排序/过滤的那个时间 */
   stamp: number;
   isNew: boolean;
+  media: MediaProperties;
+}
+
+export interface ImageFilter {
+  exts: string[];
+  ratio: string;
+  width: number;
+  height: number;
+  resolutionMode: string;
+  minMB: number;
+  maxMB: number;
+}
+
+export interface MediaProperties {
+  width: number;
+  height: number;
+  durationSeconds: number;
 }
 
 /** Preset 是保存下来的筛选方案。 */
@@ -58,6 +76,8 @@ export interface SearchQuery {
   limit: number;
   /** "time" | "size" | "name" */
   sortBy: string;
+  image: ImageFilter;
+  video: VideoFilter;
 }
 
 /** SearchResult 是给前端的完整响应。 */
@@ -69,6 +89,7 @@ export interface SearchResult {
   elapsedMs: number;
   lo: number;
   hi: number;
+  mediaSkipped: number;
 }
 
 /** TypeGroup 是按扩展名分好的一组结果。 */
@@ -77,6 +98,14 @@ export interface TypeGroup {
   /** 命中总数（可能大于 Items 长度） */
   count: number;
   items: FileItem[];
+}
+
+export interface VideoFilter {
+  exts: string[];
+  minMB: number;
+  maxMB: number;
+  minSeconds: number;
+  maxSeconds: number;
 }
 
 // ---- Services ----

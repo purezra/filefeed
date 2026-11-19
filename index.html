@@ -88,17 +88,75 @@
         </div>
       </div>
 
+      <div id="mediaFilters" class="media-filters hide">
+        <fieldset id="imageFilters" class="media-filter hide" disabled>
+          <legend>图片筛选</legend>
+          <div class="media-fields">
+            <label class="media-field" for="imageRatio">
+              <span>比例</span>
+              <input id="imageRatio" class="input ratio" list="imageRatios" placeholder="不限，如 16:9" />
+            </label>
+            <datalist id="imageRatios">
+              <option value="横图"></option><option value="竖图"></option><option value="1:1"></option>
+              <option value="16:9"></option><option value="9:16"></option><option value="4:3"></option>
+              <option value="3:4"></option><option value="3:2"></option><option value="2:3"></option>
+            </datalist>
+            <div class="media-field">
+              <span>分辨率（px）</span>
+              <div class="media-range">
+                <select id="imageResolutionMode" class="input sel" aria-label="图片分辨率比较方式">
+                  <option value="min">至少</option><option value="exact">等于</option><option value="max">至多</option>
+                </select>
+                <input id="imageWidth" class="input num" type="number" min="1" step="1" placeholder="宽" aria-label="图片宽度" />
+                <span aria-hidden="true">×</span>
+                <input id="imageHeight" class="input num" type="number" min="1" step="1" placeholder="高" aria-label="图片高度" />
+              </div>
+            </div>
+            <div class="media-field">
+              <span>大小（MB）</span>
+              <div class="media-range">
+                <input id="imageMinMB" class="input num" type="number" min="0" step="any" placeholder="最小" aria-label="图片最小大小（MB）" />
+                <span aria-hidden="true">–</span>
+                <input id="imageMaxMB" class="input num" type="number" min="0" step="any" placeholder="最大" aria-label="图片最大大小（MB）" />
+              </div>
+            </div>
+            <button type="button" class="btn tiny ghost" data-reset-media="image">重置</button>
+          </div>
+        </fieldset>
+        <fieldset id="videoFilters" class="media-filter hide" disabled>
+          <legend>视频筛选</legend>
+          <div class="media-fields">
+            <div class="media-field">
+              <span>大小（MB）</span>
+              <div class="media-range">
+                <input id="videoMinMB" class="input num" type="number" min="0" step="any" placeholder="最小" aria-label="视频最小大小（MB）" />
+                <span aria-hidden="true">–</span>
+                <input id="videoMaxMB" class="input num" type="number" min="0" step="any" placeholder="最大" aria-label="视频最大大小（MB）" />
+              </div>
+            </div>
+            <div class="media-field">
+              <span>时长（秒）</span>
+              <div class="media-range">
+                <input id="videoMinSeconds" class="input num" type="number" min="0" step="any" placeholder="最短" aria-label="视频最短时长（秒）" />
+                <span aria-hidden="true">–</span>
+                <input id="videoMaxSeconds" class="input num" type="number" min="0" step="any" placeholder="最长" aria-label="视频最长时长（秒）" />
+              </div>
+            </div>
+            <button type="button" class="btn tiny ghost" data-reset-media="video">重置</button>
+          </div>
+        </fieldset>
+      </div>
     </header>
 
     <nav id="formatNav" class="format-nav hide" aria-label="跳转到文件格式"></nav>
     <div id="selBar" class="selbar hide">
       <span class="selcount">已选 <b id="selCount">0</b> 个文件</span>
       <div class="selacts">
-        <button class="act" data-bulk="open"><i>▶</i>打开</button>
-        <button class="act" data-bulk="reveal"><i>⌖</i>位置</button>
-        <button class="act" data-bulk="path"><i>⌘</i>路径</button>
-        <button class="act" data-bulk="copy"><i>⧉</i>复制</button>
-        <button class="act danger" data-bulk="delete"><i>✕</i>删除</button>
+        <button class="act" data-bulk="open"><span class="action-icon" aria-hidden="true">&#xE8A7;</span>打开</button>
+        <button class="act" data-bulk="reveal"><span class="action-icon" aria-hidden="true">&#xE838;</span>位置</button>
+        <button class="act" data-bulk="path"><span class="action-icon" aria-hidden="true">&#xE71B;</span>路径</button>
+        <button class="act" data-bulk="copy"><span class="action-icon" aria-hidden="true">&#xE8C8;</span>复制</button>
+        <button class="act danger" data-bulk="delete"><span class="action-icon" aria-hidden="true">&#xE74D;</span>删除</button>
       </div>
       <div class="grow"></div>
       <button class="btn tiny ghost" id="btnClearSel">取消选择</button>
@@ -119,9 +177,9 @@
       <div class="sheet">
         <h2>设置</h2>
         <label>监控的文件类型（逗号或换行分隔，不带点）</label>
-        <textarea id="cfgExts" rows="5"></textarea>
+        <textarea id="cfgExts" rows="4"></textarea>
         <label>排除路径片段（每行一个，不区分大小写）</label>
-        <textarea id="cfgExclude" rows="5"></textarea>
+        <textarea id="cfgExclude" rows="4"></textarea>
         <div class="settings-options">
           <div>
             <label for="cfgLimit">每个类型最多显示</label>
@@ -138,6 +196,18 @@
             </select>
           </div>
         </div>
+        <fieldset class="quick-settings">
+          <legend>快捷分类</legend>
+          <div class="quick-setting-tools">
+            <select id="cfgQuickGroup" class="input sel" aria-label="要配置的快捷分类">
+              <option value="doc">文档</option><option value="code">代码</option><option value="image">图片</option>
+              <option value="video">视频</option><option value="audio">音频</option><option value="archive">压缩包</option>
+            </select>
+            <input id="cfgQuickExt" class="input" placeholder="添加其他扩展名" aria-label="自定义扩展名" />
+            <button id="cfgQuickAdd" type="button" class="btn">添加</button>
+          </div>
+          <div id="cfgQuickTypes" class="quick-checkboxes"></div>
+        </fieldset>
         <div class="foot">
           <button class="btn ghost" data-close="modalSettings">取消</button>
           <button class="btn primary" id="btnSaveCfg">保存</button>
