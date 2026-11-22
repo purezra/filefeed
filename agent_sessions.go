@@ -56,6 +56,19 @@ type AgentArchive struct {
 	Exported int    `json:"exported"`
 }
 
+type AgentExportItem struct {
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Folder string `json:"folder"`
+}
+
+type AgentBatch struct {
+	Path     string `json:"path"`
+	Matched  int    `json:"matched"`
+	Exported int    `json:"exported"`
+	Skipped  int    `json:"skipped"`
+}
+
 func (Service) SessionCLI() (string, error) {
 	dir, err := mygo.App.Path(mygo.PathResources)
 	if err != nil {
@@ -144,6 +157,78 @@ func (s Service) ExportAgentSession(ctx context.Context, key, agent string, clea
 		return "", err
 	}
 	return path, nil
+}
+
+func (s Service) ExportAgentSessions(ctx context.Context, group string, items []AgentExportItem, clean, zip bool) (AgentBatch, error) {
+	var result AgentBatch
+	if len(items) == 0 {
+		return result, errors.New("没有可导出的会话")
+	}
+	var output string
+	if zip {
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+			Parent: mygo.CallerWindow(ctx), Title: "导出会话压缩包",
+			DefaultPath: batchExportFilename(group, time.Now()),
+			Filters:     []mygo.FileFilter{{Name: "ZIP", Extensions: []string{"zip"}}},
+		})
+		if err != nil || path == "" {
+			return result, err
+		}
+		output = path
+	} else {
+		start, _ := mygo.App.Path(mygo.PathDocuments)
+		dirs, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent: mygo.CallerWindow(ctx), Title: "选择导出目录", DefaultPath: start,
+			Directory: true, CreateDirectories: true,
+		})
+		if err != nil || len(dirs) == 0 {
+			return result, err
+		}
+		output = dirs[0]
+	}
+	manifest, err := json.Marshal(struct {
+		Output  string            `json:"output"`
+		Zip     bool              `json:"zip"`
+		Clean   bool              `json:"clean"`
+		Name    string            `json:"name"`
+		Entries []AgentExportItem `json:"entries"`
+	}{output, zip, clean, group, items})
+	if err != nil {
+		return result, err
+	}
+	file, err := os.CreateTemp("", "filefeed-batch-*.json")
+	if err != nil {
+		return result, err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.Write(manifest); err != nil {
+		file.Close()
+		return result, err
+	}
+	if err := file.Close(); err != nil {
+		return result, err
+	}
+	err = s.sessionCommand(ctx, &result, "batch", file.Name())
+	return result, err
+}
+
+func batchExportFilename(group string, at time.Time) string {
+	name := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == ' ' {
+			return r
+		}
+		return '-'
+	}, group)
+	name = strings.Join(strings.Fields(name), " ")
+	runes := []rune(strings.Trim(name, " -"))
+	if len(runes) > 50 {
+		runes = runes[:50]
+	}
+	name = strings.TrimSpace(string(runes))
+	if name == "" {
+		name = "filefeed"
+	}
+	return name + "_" + at.Format("200601021504") + ".zip"
 }
 
 func (s Service) SaveAgentArchive(ctx context.Context, agent, date string) (AgentArchive, error) {

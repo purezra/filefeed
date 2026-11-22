@@ -198,6 +198,12 @@ func desktop(args []string) error {
 			rows = append(rows, row(s, names))
 		}
 		return encode(rows)
+	case args[0] == "batch" && len(args) == 2:
+		result, err := exportBatch(args[1])
+		if err != nil {
+			return err
+		}
+		return encode(result)
 	case (args[0] == "read" && len(args) == 2) || ((args[0] == "export" || args[0] == "export-clean") && len(args) == 3):
 		agent, id, _ := strings.Cut(args[1], ":")
 		s, ok := sessions.Find(agent, id)

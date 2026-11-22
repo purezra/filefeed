@@ -148,14 +148,18 @@ func addMarkdown(archive *zip.Writer, dir string, n int, s sessions.Session, ent
 	return nil
 }
 
+func writeMarkdown(w io.Writer, s sessions.Session, clean bool) error {
+	if clean {
+		return writeCleanMarkdown(w, s, func(each func(sessions.Part) bool) error {
+			return sessions.FileFeedParts(s, each)
+		})
+	}
+	return sessions.WriteMarkdown(w, s, rowAgent(s))
+}
+
 func exportMarkdown(s sessions.Session, path string, clean bool) error {
 	return writeAtomic(path, func(w io.Writer) error {
-		if clean {
-			return writeCleanMarkdown(w, s, func(each func(sessions.Part) bool) error {
-				return sessions.FileFeedParts(s, each)
-			})
-		}
-		return sessions.WriteMarkdown(w, s, rowAgent(s))
+		return writeMarkdown(w, s, clean)
 	})
 }
 

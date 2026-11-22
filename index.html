@@ -190,6 +190,7 @@
           </label>
           <input id="sessionSearch" class="input" type="search" aria-label="搜索会话" placeholder="搜索标题、目录、话题或会话 ID" />
           <button id="sessionRefresh" class="btn ghost">刷新</button>
+          <button id="toggleAllSessions" class="btn ghost" title="折叠或展开全部分组">全部折叠</button>
         </div>
         <div class="session-archive">
           <label class="muted small" for="sessionDate">归档日期</label>
@@ -202,6 +203,9 @@
         <span id="sessionCount" class="muted small" role="status"></span>
         <span id="sessionFeedback" class="small" role="status"></span>
         <button id="showSessionArchive" class="btn tiny ghost hide">查看归档位置</button>
+        <span class="grow"></span>
+        <label class="session-clean small" title="只导出问答正文"><input id="cleanSessionExport" type="checkbox" />纯净导出</label>
+        <label class="session-clean small" title="批量导出时打包为一个 zip"><input id="zipSessionExport" type="checkbox" />导出为 zip</label>
       </div>
       <div id="sessionLayout" class="session-layout">
         <section class="session-browser" aria-label="会话列表">
@@ -217,7 +221,7 @@
                 <span id="sessionDetailAgent" class="muted small"></span>
                 <div class="grow"></div>
                 <button id="showSessionSource" class="btn tiny ghost">源文件位置</button>
-                <label class="session-clean small"><input id="cleanSessionExport" type="checkbox" />纯净显示</label>
+                <label class="session-clean small" title="只显示对话正文，隐藏思考、工具调用和工具结果"><input id="cleanSessionView" type="checkbox" />纯净显示</label>
                 <button id="exportSession" class="btn tiny">导出 Markdown</button>
               </div>
               <h2 id="sessionTitle" tabindex="-1"></h2>

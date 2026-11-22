@@ -10,6 +10,19 @@ export interface AgentArchive {
   exported: number;
 }
 
+export interface AgentBatch {
+  path: string;
+  matched: number;
+  exported: number;
+  skipped: number;
+}
+
+export interface AgentExportItem {
+  key: string;
+  name: string;
+  folder: string;
+}
+
 export interface AgentPart {
   role: string;
   kind: string;
@@ -167,6 +180,7 @@ export const Service = {
    */
   deleteFiles: bind<[string[]], string>("Service.DeleteFiles", (paths: string[]) => [paths]),
   exportAgentSession: bind<[string, string, boolean], string>("Service.ExportAgentSession", (key: string, agent: string, clean: boolean) => [key, agent, clean]),
+  exportAgentSessions: bind<[string, AgentExportItem[], boolean, boolean], AgentBatch>("Service.ExportAgentSessions", (group: string, items: AgentExportItem[], clean: boolean, zip: boolean) => [group, items, clean, zip]),
   /**
    * Open 用系统默认程序打开文件，返回错误信息（空串表示成功）。
    * 注意：不能给 GUI 子进程设 HideWindow，否则打开的程序窗口会是隐藏的。

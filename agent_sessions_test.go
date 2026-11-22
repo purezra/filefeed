@@ -5,6 +5,17 @@ import (
 	"time"
 )
 
+func TestBatchExportFilename(t *testing.T) {
+	local := time.FixedZone("UTC+8", 8*60*60)
+	at := time.Date(2026, 11, 22, 15, 30, 0, 0, local)
+	if got, want := batchExportFilename("Telegram 群 · forcindy", at), "Telegram 群 - forcindy_202611221530.zip"; got != want {
+		t.Errorf("filename = %q, want %q", got, want)
+	}
+	if got, want := batchExportFilename("///", at), "filefeed_202611221530.zip"; got != want {
+		t.Errorf("empty filename = %q, want %q", got, want)
+	}
+}
+
 func TestSessionExportFilename(t *testing.T) {
 	local := time.FixedZone("UTC+8", 8*60*60)
 	for _, test := range []struct {

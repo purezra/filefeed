@@ -1,4 +1,4 @@
-import { Service, type AgentSession, type AgentPart } from "./mygo";
+import { Service, type AgentSession, type AgentPart, type AgentTranscript } from "./mygo";
 
 const names: Record<string, string> = {
   codex: "Codex", claude: "Claude Code", "claude-desktop": "Claude Desktop", cindy: "Cindy",
@@ -44,6 +44,66 @@ function partNode(part: AgentPart) {
   return block;
 }
 
+// Metadata blocks the agents inject around a message. The reading view drops
+// them; an unclosed block also drops the rest, since it is always appended.
+const metaTags = [
+  "environment_context", "group_chat_context", "group_chat_attachments", "reply_context", "bot_persona",
+  "cindy-host-image-references", "cindy-extra-writable-directories", "group_history_result",
+  "user_instructions",
+];
+
+function stripMetaTags(text: string) {
+  let out = text;
+  for (const tag of metaTags) {
+    out = out.replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), "");
+    out = out.replace(new RegExp(`<${tag}>[\\s\\S]*$`, "g"), "");
+  }
+  return out;
+}
+
+// parseUserText separates the injected channel note and quote from what the
+// person actually typed, so the reading view can look like a chat.
+function parseUserText(raw: string) {
+  const source = raw.replace(/\r\n/g, "\n");
+  const lines = source.split("\n");
+  const marker = lines.findIndex((line) => line.trimStart().startsWith("[发言人]"));
+  const sender = marker >= 0 ? (lines[marker]?.match(/^\[发言人\]\s*([^(@·]+)/)?.[1]?.trim() ?? "") : "";
+  const quote = source.match(/<reply_context>([\s\S]*?)<\/reply_context>/)?.[1]?.trim() ?? "";
+  let text = marker >= 0 ? lines.slice(marker + 1).join("\n") : source;
+  text = stripMetaTags(text)
+    .replace(/^以上[^\n]{0,80}标签块内[\s\S]*?(?:\n[ \t]*\n|$)/gm, "")
+    .replace(/^\[渠道说明\][^\n]*$/gm, "")
+    .replace(/^\[发言人\][^\n]*$/gm, "")
+    .trim();
+  return { sender, quote, text };
+}
+
+function readingPart(part: AgentPart, seen: Set<string>) {
+  if ((part.role !== "user" && part.role !== "assistant") || (part.kind !== "text" && part.kind !== "image")) return;
+  const row = node("div", "", `chat-row ${part.role === "user" ? "from-user" : "from-agent"}`);
+  const bubble = node("div", "", "chat-bubble");
+  if (part.kind === "image") {
+    bubble.append(node("span", "[图片]", "chat-attachment"));
+  } else if (part.role === "user") {
+    const parsed = parseUserText(part.text);
+    if (!parsed.text) return;
+    // Cindy replays a recorded turn later in the same file; the quote and
+    // sender make the copies identical without hiding a short repeat.
+    const signature = `${parsed.sender}\u0000${parsed.quote}\u0000${parsed.text}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    if (parsed.sender) bubble.append(node("span", parsed.sender, "chat-sender"));
+    if (parsed.quote) bubble.append(node("blockquote", parsed.quote, "chat-quote"));
+    bubble.append(node("p", parsed.text));
+  } else if (part.text.trim()) {
+    bubble.append(node("p", part.text));
+  }
+  if (!bubble.childElementCount) return;
+  if (part.cut) bubble.append(node("span", `… 另有 ${number.format(part.cut)} 字符`, "muted small"));
+  row.append(bubble);
+  return row;
+}
+
 export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFiles: () => void) {
   const page = byId("sessionPage");
   const filesButton = byId<HTMLButtonElement>("showFiles");
@@ -56,6 +116,9 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
   const archiveLink = byId<HTMLButtonElement>("showSessionArchive");
   const exportButton = byId<HTMLButtonElement>("exportSession");
   const cleanExport = byId<HTMLInputElement>("cleanSessionExport");
+  const zipExport = byId<HTMLInputElement>("zipSessionExport");
+  const cleanView = byId<HTMLInputElement>("cleanSessionView");
+  const toggleAll = byId<HTMLButtonElement>("toggleAllSessions");
   const classify = byId<HTMLInputElement>("cindyClassify");
   const sourceButton = byId<HTMLButtonElement>("showSessionSource");
   const more = byId<HTMLButtonElement>("moreSessions");
@@ -70,6 +133,7 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
   let rows: AgentSession[] | undefined;
   let limit = pageSize;
   let selected: AgentSession | undefined;
+  let currentTranscript: AgentTranscript | undefined;
   let archivePath = "";
   let exporting = false;
   let readVersion = 0;
@@ -113,20 +177,47 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
     }
     sourceButton.disabled = !row.path;
     exportButton.disabled = !row.readable || exporting;
+    currentTranscript = undefined;
+    transcript.classList.toggle("reading", cleanView.checked);
     transcript.textContent = row.readable ? "正在读取对话…" : "已识别该会话的元数据。当前读取器暂无法显示正文。";
     detail.scrollTop = 0;
     if (focus) title.focus({ preventScroll: true });
     if (!row.readable) return;
     void Service.agentTranscript(row.key).then((result) => {
       if (version !== readVersion) return;
-      const content = document.createDocumentFragment();
-      for (const part of result.parts) content.append(partNode(part));
-      transcript.replaceChildren(content);
-      if (!result.parts.length) transcript.textContent = "没有可显示的对话内容。";
-      if (result.cut) transcript.prepend(node("p", "当前为长会话预览，导出 Markdown 可查看完整正文。", "session-preview-note"));
+      currentTranscript = result;
+      renderTranscript();
     }).catch((error: unknown) => {
-      if (version === readVersion) transcript.textContent = message(error);
+      if (version !== readVersion) return;
+      currentTranscript = undefined;
+      transcript.textContent = message(error);
     });
+  }
+
+  function renderTranscript() {
+    const result = currentTranscript;
+    if (!result) return;
+    const content = document.createDocumentFragment();
+    let shown = 0;
+    if (result.cut) content.append(node("p", "当前为长会话预览，导出 Markdown 可查看完整正文。", "session-preview-note"));
+    if (cleanView.checked) {
+      const seen = new Set<string>();
+      for (const part of result.parts) {
+        const item = readingPart(part, seen);
+        if (item) {
+          content.append(item);
+          shown++;
+        }
+      }
+    } else {
+      for (const part of result.parts) {
+        content.append(partNode(part));
+        shown++;
+      }
+    }
+    transcript.classList.toggle("reading", cleanView.checked);
+    if (shown) transcript.replaceChildren(content);
+    else transcript.textContent = "没有可显示的对话内容。";
   }
 
   function rowNode(row: AgentSession) {
@@ -140,20 +231,28 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
     return item;
   }
 
-  function render() {
+  function filteredRows() {
     const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = (rows ?? []).filter((row) => {
+    return (rows ?? []).filter((row) => {
       if (agent.value !== "all" && row.agent !== agent.value) return false;
       const haystack = `${row.title}\n${row.folder}\n${row.channel ?? ""}\n${row.topic ?? ""}\n${row.topicId ?? ""}\n${row.id}\n${agentName(row.agent)}\n${row.models.join(" ")}`.toLowerCase();
       return words.every((word) => haystack.includes(word));
     });
+  }
+
+  function groupKeyFor(row: AgentSession) {
+    return classify.checked && row.channel ? row.channel : row.folder;
+  }
+
+  function render() {
+    const matches = filteredRows();
     if (selected && !matches.some((row) => row.key === selected?.key)) select();
     const classifying = classify.checked;
     const collapsed = new Set(Array.from(list.querySelectorAll<HTMLDetailsElement>(".session-group:not([open])"), (group) => group.dataset.folder));
     const openedTopics = new Set(Array.from(list.querySelectorAll<HTMLDetailsElement>(".session-topic[open]"), (group) => group.dataset.folder));
     const groups = new Map<string, AgentSession[]>();
     for (const row of matches.slice(0, limit)) {
-      const key = classifying && row.channel ? row.channel : row.folder;
+      const key = groupKeyFor(row);
       const group = groups.get(key);
       if (group) group.push(row);
       else groups.set(key, [row]);
@@ -177,7 +276,17 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
       const folders = new Set(group.map((row) => row.folder));
       main.append(node("strong", byChannel ? groupKey : groupTitle(groupKey)));
       main.append(node("span", byChannel ? (folders.size === 1 ? group[0]!.folder : `${number.format(folders.size)} 个目录`) : groupKey, "muted small"));
-      heading.append(main, node("span", number.format(group.length), "session-group-count"));
+      const download = node("button", "导出", "btn tiny ghost session-group-export");
+      download.type = "button";
+      download.disabled = exporting;
+      download.title = "导出该组全部会话";
+      download.setAttribute("aria-label", `导出 ${byChannel ? groupKey : groupTitle(groupKey)} 下的全部会话`);
+      download.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void exportGroup(groupKey);
+      };
+      heading.append(main, node("span", number.format(group.length), "session-group-count"), download);
       panel.append(heading);
       const topics = new Map<string, AgentSession[]>();
       let hasTopics = false;
@@ -211,12 +320,59 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
       const empty = listError || (rows ? rows.length ? "没有匹配的会话。" : "尚未发现本地 Agent 会话。" : "正在查找本地会话…");
       list.append(node("div", empty, "session-empty muted"));
     }
+    updateToggleAll();
+  }
+
+  function updateToggleAll() {
+    const panels = Array.from(list.querySelectorAll<HTMLDetailsElement>(".session-group, .session-topic"));
+    const open = panels.some((panel) => panel.open);
+    toggleAll.textContent = open ? "全部折叠" : "全部展开";
+    toggleAll.disabled = !panels.length;
   }
 
   function clearFeedback() {
     feedback.textContent = "";
     archivePath = "";
     archiveLink.classList.add("hide");
+  }
+
+  function setExporting(value: boolean) {
+    exporting = value;
+    cleanExport.disabled = zipExport.disabled = value;
+    exportButton.disabled = value || !selected?.readable;
+    for (const button of list.querySelectorAll<HTMLButtonElement>(".session-group-export")) button.disabled = value;
+  }
+
+  async function exportGroup(groupKey: string) {
+    if (exporting) return;
+    const group = filteredRows().filter((row) => groupKeyFor(row) === groupKey);
+    if (!group.length) return;
+    setExporting(true);
+    archivePath = "";
+    archiveLink.classList.add("hide");
+    feedback.textContent = `正在导出 ${number.format(group.length)} 个会话…`;
+    try {
+      const label = classify.checked && group[0]?.channel ? groupKey : groupTitle(groupKey);
+      const result = await Service.exportAgentSessions(
+        label,
+        group.map((row) => ({ key: row.key, name: row.title || row.id, folder: classify.checked ? (row.topic ?? "") : "" })),
+        cleanExport.checked,
+        zipExport.checked,
+      );
+      if (!result.path) {
+        feedback.textContent = "";
+        return;
+      }
+      archivePath = result.path;
+      const skipped = result.skipped ? `，${number.format(result.skipped)} 个仅元数据或读取失败` : "";
+      feedback.textContent = `已导出 ${number.format(result.exported)} / ${number.format(result.matched)} 个会话${skipped}。`;
+      archiveLink.textContent = "查看导出位置";
+      archiveLink.classList.remove("hide");
+    } catch (error) {
+      feedback.textContent = message(error);
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function refresh() {
@@ -264,9 +420,17 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
   search.oninput = criteriaChanged;
   agent.onchange = () => { clearFeedback(); criteriaChanged(); };
   classify.onchange = criteriaChanged;
+  cleanView.onchange = () => renderTranscript();
   date.onchange = clearFeedback;
   refreshButton.onclick = () => void refresh();
   more.onclick = () => { limit += pageSize; render(); };
+  toggleAll.onclick = () => {
+    const panels = Array.from(list.querySelectorAll<HTMLDetailsElement>(".session-group, .session-topic"));
+    const open = panels.some((panel) => panel.open);
+    for (const panel of panels) panel.open = !open;
+    updateToggleAll();
+  };
+  list.addEventListener("toggle", updateToggleAll, true);
   byId("closeSessionDetail").onclick = () => {
     const key = selected?.key;
     select();
@@ -278,7 +442,7 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
   };
   exportButton.onclick = async () => {
     if (!selected || exporting) return;
-    exporting = cleanExport.disabled = exportButton.disabled = true;
+    setExporting(true);
     clearFeedback();
     try {
       const path = await Service.exportAgentSession(selected.key, agentName(selected.agent), cleanExport.checked);
@@ -291,8 +455,7 @@ export function bindSessions(copy: (value: string) => Promise<boolean>, resumeFi
     } catch (error) {
       feedback.textContent = message(error);
     } finally {
-      exporting = cleanExport.disabled = false;
-      exportButton.disabled = !selected?.readable;
+      setExporting(false);
     }
   };
 

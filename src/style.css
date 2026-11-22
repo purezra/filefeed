@@ -297,6 +297,11 @@ header {
   font-size: var(--fs-label);
   font-style: normal;
 }
+.session-group-export {
+  flex: none;
+  margin-top: -1px;
+  background: var(--panel);
+}
 .session-topic { border-top: 1px solid var(--line); }
 .session-topic-title {
   display: flex;
@@ -365,6 +370,42 @@ header {
 .session-part summary { cursor: pointer; }
 .session-part pre { margin: 5px 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .session-preview-note { color: var(--dim); margin: 0; }
+
+/* 纯净显示：左右气泡 */
+#sessionTranscript.reading { display: flex; flex-direction: column; gap: var(--sp-3); }
+.chat-row { display: flex; min-width: 0; }
+.chat-row.from-user { justify-content: flex-end; }
+.chat-row.from-agent { justify-content: flex-start; }
+.chat-bubble {
+  max-width: 78%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+.chat-row.from-user .chat-bubble { background: var(--accent-soft); border-color: #cfdcff; }
+.chat-bubble p { margin: 0; font: inherit; white-space: pre-wrap; }
+.chat-sender { display: block; margin-bottom: 2px; color: var(--dim); font-size: var(--fs-label); }
+.chat-quote {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-left: 3px solid var(--line2);
+  background: var(--panel);
+  color: var(--dim);
+  font-size: var(--fs-sub);
+  white-space: pre-wrap;
+}
+.chat-attachment {
+  display: inline-flex;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: var(--fs-label);
+}
+.chat-bubble .muted.small { display: block; margin-top: var(--sp-1); }
 #closeSessionDetail { display: none; }
 
 @media (max-width: 800px) {
