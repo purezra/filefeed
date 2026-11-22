@@ -42,3 +42,10 @@ func TestCleanMarkdownKeepsQuestionsAndAnswers(t *testing.T) {
 		}
 	}
 }
+
+func TestDatedCindyQuestionDropsInjectedHistory(t *testing.T) {
+	source := "[渠道说明] Telegram 群\n[发言人] 测试用户 (@fixture) · group\n<group_chat_context>昨天的内容</group_chat_context>\n今天的内容"
+	if got := cleanDatedCindyQuestion(source); got != "发言人：测试用户\n\n今天的内容" {
+		t.Fatalf("cleaned question = %q", got)
+	}
+}

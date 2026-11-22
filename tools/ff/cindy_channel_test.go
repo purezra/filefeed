@@ -143,7 +143,12 @@ func TestCindyTopicIDs(t *testing.T) {
 		}
 	}
 	ids := cindyTopicIDs(filepath.Join(sessions, "session.jsonl"), "9085529043", "-1003901021780")
-	if !ids["47"] || !ids["215"] || len(ids) != 2 {
-		t.Fatalf("cindyTopicIDs() = %v, want 47 and 215", ids)
+	if !ids["1"] || !ids["47"] || !ids["215"] || len(ids) != 3 {
+		t.Fatalf("cindyTopicIDs() = %v, want General, 47, and 215", ids)
+	}
+	body := []byte(`本条来自 Telegram 群「forcindy」(chat_id: -1003901021780)。`)
+	id, topic := groupTopic(body, "-1003901021780", ids, nil)
+	if id != "1" || topic != "General" {
+		t.Fatalf("groupTopic() = %q, %q, want 1, General", id, topic)
 	}
 }

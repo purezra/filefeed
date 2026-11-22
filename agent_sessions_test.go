@@ -8,10 +8,10 @@ import (
 func TestBatchExportFilename(t *testing.T) {
 	local := time.FixedZone("UTC+8", 8*60*60)
 	at := time.Date(2026, 11, 22, 15, 30, 0, 0, local)
-	if got, want := batchExportFilename("Telegram 群 · forcindy", at), "Telegram 群 - forcindy_202611221530.zip"; got != want {
+	if got, want := batchExportFilename("Telegram 群 · forcindy", at, "zip"), "Telegram 群 - forcindy_202611221530.zip"; got != want {
 		t.Errorf("filename = %q, want %q", got, want)
 	}
-	if got, want := batchExportFilename("///", at), "filefeed_202611221530.zip"; got != want {
+	if got, want := batchExportFilename("///", at, "md"), "filefeed_202611221530.md"; got != want {
 		t.Errorf("empty filename = %q, want %q", got, want)
 	}
 }

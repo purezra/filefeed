@@ -183,20 +183,33 @@
 
     <main id="sessionPage" class="hide" aria-label="Agent 会话">
       <div class="session-controls">
-        <div class="session-filters">
-          <select id="sessionAgent" class="input sel" aria-label="筛选 Agent"><option value="all">全部 Agent</option></select>
-          <label id="cindyClassifyLabel" class="session-clean small" title="按电脑端、Telegram Bot 和群话题树形归类">
-            <input id="cindyClassify" type="checkbox" checked />对话分类
-          </label>
-          <input id="sessionSearch" class="input" type="search" aria-label="搜索会话" placeholder="搜索标题、目录、话题或会话 ID" />
+        <div class="session-choice">
+          <label for="sessionAgent" class="muted small">Agent</label>
+          <select id="sessionAgent" class="input sel"><option value="">选择 Agent</option></select>
+          <div class="seg session-mode" role="group" aria-label="查找方式">
+            <button id="browseSessions" class="on" aria-pressed="true">浏览会话</button>
+            <button id="findSessionsByDate" aria-pressed="false">按日期查找</button>
+          </div>
+          <span class="grow"></span>
+          <button id="openSessionArchive" class="btn ghost" title="将指定日期活跃的会话完整归档">归档工具</button>
           <button id="sessionRefresh" class="btn ghost">刷新</button>
-          <button id="toggleAllSessions" class="btn ghost" title="折叠或展开全部分组">全部折叠</button>
         </div>
-        <div class="session-archive">
-          <label class="muted small" for="sessionDate">归档日期</label>
-          <input id="sessionDate" class="input" type="date" required />
-          <button id="copySessionCLI" class="btn ghost" title="复制 PowerShell 归档命令">复制命令</button>
-          <button id="saveSessionDay" class="btn primary">保存当天会话</button>
+        <form id="sessionDateForm" class="session-date hide">
+          <p id="sessionDateRule" class="small muted"></p>
+          <div class="session-date-fields">
+            <label class="small muted">开始日期 <input id="sessionFrom" class="input" type="date" /></label>
+            <label class="small muted">结束日期 <input id="sessionTo" class="input" type="date" /></label>
+            <button id="sessionToday" class="btn ghost" type="button">今天</button>
+            <button id="applySessionDates" class="btn primary">查找会话</button>
+          </div>
+          <p class="small muted">含所选日期。只填开始或结束日期可查找单边范围。</p>
+        </form>
+        <div id="sessionFilters" class="session-filters hide">
+          <input id="sessionSearch" class="input" type="search" aria-label="搜索会话" placeholder="搜索标题、目录、话题或会话 ID" />
+          <label id="cindyClassifyLabel" class="session-clean small" title="按电脑端、Telegram Bot 和群话题树形归类">
+            <input id="cindyClassify" type="checkbox" checked />按渠道分类
+          </label>
+          <button id="toggleAllSessions" class="btn ghost" title="折叠或展开全部分组">全部折叠</button>
         </div>
       </div>
       <div class="session-status">
@@ -204,8 +217,10 @@
         <span id="sessionFeedback" class="small" role="status"></span>
         <button id="showSessionArchive" class="btn tiny ghost hide">查看归档位置</button>
         <span class="grow"></span>
-        <label class="session-clean small" title="只导出问答正文"><input id="cleanSessionExport" type="checkbox" />纯净导出</label>
-        <label class="session-clean small" title="批量导出时打包为一个 zip"><input id="zipSessionExport" type="checkbox" />导出为 zip</label>
+        <div id="sessionDateActions" class="session-date-actions hide">
+          <button id="mergeDatedSessions" class="btn tiny primary">合并 Markdown</button>
+          <button id="zipDatedSessions" class="btn tiny ghost">导出结果为 ZIP</button>
+        </div>
       </div>
       <div id="sessionLayout" class="session-layout">
         <section class="session-browser" aria-label="会话列表">
@@ -221,7 +236,7 @@
                 <span id="sessionDetailAgent" class="muted small"></span>
                 <div class="grow"></div>
                 <button id="showSessionSource" class="btn tiny ghost">源文件位置</button>
-                <label class="session-clean small" title="只显示对话正文，隐藏思考、工具调用和工具结果"><input id="cleanSessionView" type="checkbox" />纯净显示</label>
+                <label class="session-clean small" title="只显示对话正文，隐藏思考、工具调用和工具结果"><input id="cleanSessionView" type="checkbox" checked />纯净显示</label>
                 <button id="exportSession" class="btn tiny">导出 Markdown</button>
               </div>
               <h2 id="sessionTitle" tabindex="-1"></h2>
@@ -230,11 +245,47 @@
                 <dl id="sessionMeta"></dl>
               </details>
             </div>
-            <div id="sessionTranscript" aria-live="polite"></div>
+            <div id="sessionReading" tabindex="0" aria-label="对话消息">
+              <button id="olderSessionMessages" class="btn tiny ghost hide">加载更早消息</button>
+              <div id="sessionTranscript"></div>
+            </div>
           </div>
         </section>
       </div>
     </main>
+
+    <dialog id="sessionExportDialog" class="sheet session-dialog" aria-labelledby="sessionExportTitle">
+      <form id="sessionExportForm">
+        <h2 id="sessionExportTitle"></h2>
+        <p id="sessionExportScope" class="small muted"></p>
+        <div id="sessionExportDates">
+          <div class="session-date-fields">
+            <label>开始日期 <input id="sessionExportFrom" class="input" type="date" /></label>
+            <label>结束日期 <input id="sessionExportTo" class="input" type="date" /></label>
+            <button id="sessionExportToday" class="btn ghost" type="button">今天</button>
+          </div>
+          <p id="sessionExportRule" class="small muted"></p>
+        </div>
+        <label class="session-clean"><input id="cleanSessionExport" type="checkbox" checked />纯净导出（问答正文）</label>
+        <div class="foot">
+          <button id="cancelSessionExport" class="btn ghost" type="button">取消</button>
+          <button class="btn primary">选择保存位置</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="sessionArchiveDialog" class="sheet session-dialog" aria-labelledby="sessionArchiveTitle">
+      <h2 id="sessionArchiveTitle">完整会话归档</h2>
+      <p class="small muted">保存所选日期活跃的会话及其完整上下文。</p>
+      <label for="sessionDate">归档日期</label>
+      <input id="sessionDate" class="input" type="date" required />
+      <form class="foot" method="dialog">
+        <button class="btn ghost">关闭</button>
+        <button id="copySessionCLI" class="btn ghost" type="button">复制命令</button>
+        <button id="saveSessionDay" class="btn primary" type="button">保存整份会话</button>
+      </form>
+      <p id="sessionArchiveFeedback" class="small" role="status"></p>
+    </dialog>
 
     <!-- 设置 -->
     <div class="modal hide" id="modalSettings">

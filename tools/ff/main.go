@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,24 +113,25 @@ func openEngine() error {
 }
 
 type sessionRow struct {
-	Key      string   `json:"key"`
-	Agent    string   `json:"agent"`
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Folder   string   `json:"folder"`
-	Path     string   `json:"path"`
-	Started  string   `json:"started"`
-	Updated  string   `json:"updated"`
-	Models   []string `json:"models"`
-	Size     int64    `json:"size"`
-	Messages int      `json:"messages"`
-	Input    int      `json:"input"`
-	Output   int      `json:"output"`
-	Cache    int      `json:"cache"`
-	Readable bool     `json:"readable"`
-	Channel  string   `json:"channel,omitempty"`
-	TopicID  string   `json:"topicId,omitempty"`
-	Topic    string   `json:"topic,omitempty"`
+	Key       string   `json:"key"`
+	Agent     string   `json:"agent"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Folder    string   `json:"folder"`
+	Path      string   `json:"path"`
+	Started   string   `json:"started"`
+	Updated   string   `json:"updated"`
+	RangeLast string   `json:"rangeLast,omitempty"`
+	Models    []string `json:"models"`
+	Size      int64    `json:"size"`
+	Messages  int      `json:"messages"`
+	Input     int      `json:"input"`
+	Output    int      `json:"output"`
+	Cache     int      `json:"cache"`
+	Readable  bool     `json:"readable"`
+	Channel   string   `json:"channel,omitempty"`
+	TopicID   string   `json:"topicId,omitempty"`
+	Topic     string   `json:"topic,omitempty"`
 }
 
 func row(s sessions.Managed, names map[string]string) sessionRow {
@@ -198,26 +200,56 @@ func desktop(args []string) error {
 			rows = append(rows, row(s, names))
 		}
 		return encode(rows)
+	case args[0] == "list-range" && len(args) == 4:
+		if !agentID.MatchString(args[1]) || args[1] == "all" {
+			return errors.New("请选择一个 Agent")
+		}
+		dates, err := parseDateRange(args[2], args[3])
+		if err != nil {
+			return err
+		}
+		if !dates.active() {
+			return errors.New("请选择开始日期或结束日期")
+		}
+		return encode(listDateMatches(args[1], dates))
 	case args[0] == "batch" && len(args) == 2:
 		result, err := exportBatch(args[1])
 		if err != nil {
 			return err
 		}
 		return encode(result)
-	case (args[0] == "read" && len(args) == 2) || ((args[0] == "export" || args[0] == "export-clean") && len(args) == 3):
-		agent, id, _ := strings.Cut(args[1], ":")
-		s, ok := sessions.Find(agent, id)
+	case args[0] == "read" && len(args) == 6:
+		s, ok := findBatchSession(args[1])
 		if !ok {
 			return errors.New("找不到该会话，请刷新列表")
 		}
-		if len(args) == 3 {
-			return exportMarkdown(s, args[2], args[0] == "export-clean")
-		}
-		transcript, err := sessions.TranscriptOf(s)
+		dates, err := parseDateRange(args[3], args[4])
 		if err != nil {
 			return err
 		}
-		return encode(transcript)
+		before, err := strconv.Atoi(args[5])
+		if err != nil || before < 0 {
+			return errors.New("无效的预览位置")
+		}
+		preview, err := readPreview(s, args[2] == "clean", dates, before)
+		if err != nil {
+			return err
+		}
+		return encode(preview)
+	case (args[0] == "export" || args[0] == "export-clean") && (len(args) == 3 || len(args) == 5):
+		s, ok := findBatchSession(args[1])
+		if !ok {
+			return errors.New("找不到该会话，请刷新列表")
+		}
+		var dates dateRange
+		if len(args) == 5 {
+			var err error
+			dates, err = parseDateRange(args[3], args[4])
+			if err != nil {
+				return err
+			}
+		}
+		return exportMarkdown(s, args[2], args[0] == "export-clean", dates)
 	default:
 		return errors.New("无效的会话操作")
 	}

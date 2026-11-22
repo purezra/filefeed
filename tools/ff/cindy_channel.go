@@ -89,12 +89,18 @@ func groupTopic(body []byte, chat string, valid map[string]bool, names map[strin
 	} else if thread, n := mostCounted(threads, order); n > 0 {
 		id = thread
 	}
+	if id == "" && valid["1"] {
+		id = "1"
+	}
 	if id == "" {
 		return "", ""
 	}
 	name := names[chat+"#"+id]
 	if name == "" {
 		name = topics[id]
+	}
+	if name == "" && id == "1" {
+		name = "General"
 	}
 	if name != "" {
 		if names[chat+"#"+id] == "" {
@@ -157,10 +163,15 @@ func cindyTopicIDs(sessionPath, bot, chat string) map[string]bool {
 	if err != nil {
 		return nil
 	}
-	prefix := "telegram_" + bot + "_g-" + chat + "-"
+	group := "telegram_" + bot + "_g-" + chat
+	prefix := group + "-"
+	hasGroupRoute := false
 	ids := map[string]bool{}
 	for _, entry := range entries {
 		name := entry.Name()
+		if name == "mcp-disclosure-"+group+".json" {
+			hasGroupRoute = true
+		}
 		at := strings.Index(name, prefix)
 		if at < 0 {
 			continue
@@ -170,9 +181,13 @@ func cindyTopicIDs(sessionPath, bot, chat string) map[string]bool {
 		for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
 			end++
 		}
-		if end > 0 {
+		if end > 0 && (rest[end:] == ".json" || strings.HasPrefix(rest[end:], "-")) {
 			ids[rest[:end]] = true
 		}
+	}
+	// A forum's General topic uses the same route key as an unthreaded group.
+	if hasGroupRoute && len(ids) > 0 {
+		ids["1"] = true
 	}
 	return ids
 }

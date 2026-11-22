@@ -221,14 +221,28 @@ header {
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
 }
 
-.session-controls, .session-filters, .session-archive, .session-status, .session-detail-actions {
+.session-controls { display: grid; gap: var(--sp-2); }
+.session-choice, .session-filters, .session-date-fields, .session-date-actions, .session-status, .session-detail-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
-.session-controls { justify-content: space-between; gap: var(--sp-2) var(--sp-4); }
-.session-filters { flex: 1 1 355px; }
+.session-choice .grow { min-width: 0; }
+#sessionAgent { max-width: 100%; }
+.session-mode button:disabled { color: var(--dim); background: var(--panel2); cursor: default; }
+.session-date {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+.session-date p, .session-dialog p { margin: 0; overflow-wrap: anywhere; }
+.session-date-fields { align-items: end; }
+.session-date-fields label { display: grid; gap: var(--sp-1); }
+.session-date-fields input { min-width: 145px; }
 #sessionSearch { flex: 1; min-width: 145px; }
 .session-status { min-height: 25px; overflow-wrap: anywhere; }
 #sessionFeedback { color: var(--accent); }
@@ -250,6 +264,7 @@ header {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
 }
+.session-detail:has(#sessionSelected:not(.hide)) { overflow: hidden; }
 .session-group { border-bottom: 1px solid var(--line); }
 .session-group-title {
   display: flex;
@@ -274,7 +289,7 @@ header {
   border-bottom: 2px solid currentColor;
   transform: rotate(-45deg);
 }
-.session-group[open] > .session-group-title {
+.session-group[data-selected="true"] > .session-group-title {
   background: var(--accent-soft);
   color: var(--tx);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -355,21 +370,23 @@ header {
 }
 #moreSessions { display: block; margin: var(--sp-3) auto; }
 .session-empty { padding: var(--sp-4); overflow-wrap: anywhere; }
-.session-detail-header { border-bottom: 1px solid var(--line); padding: var(--sp-3) var(--sp-4); }
+#sessionSelected { height: 100%; display: flex; flex-direction: column; }
+.session-detail-header { flex: none; border-bottom: 1px solid var(--line); padding: var(--sp-3) var(--sp-4); }
 .session-clean { display: inline-flex; align-items: center; gap: var(--sp-1); cursor: pointer; }
 .session-clean input { margin: 0; accent-color: var(--accent); }
 .session-detail-header h2 { margin: var(--sp-2) 0; font-size: 17px; overflow-wrap: anywhere; }
 .session-detail-meta summary { color: var(--dim); cursor: pointer; }
-#sessionMeta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: var(--sp-2) 0 0; }
+#sessionMeta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: var(--sp-2) 0 0; max-height: 24vh; overflow: auto; }
 #sessionMeta dt { color: var(--dim); }
 #sessionMeta dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+#sessionReading { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; }
+#olderSessionMessages { display: block; margin: var(--sp-2) auto 0; }
 #sessionTranscript { display: grid; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
 .session-part { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); }
 .session-part.user-part { background: var(--accent-soft); }
 .session-part.auxiliary { background: var(--panel2); color: var(--dim); }
 .session-part summary { cursor: pointer; }
 .session-part pre { margin: 5px 0 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-.session-preview-note { color: var(--dim); margin: 0; }
 
 /* 纯净显示：左右气泡 */
 #sessionTranscript.reading { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -826,8 +843,14 @@ footer {
   outline-offset: -3px;
 }
 
-.preset-dialog { color: var(--tx); }
-.preset-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.preset-dialog, .session-dialog { color: var(--tx); }
+.preset-dialog::backdrop, .session-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.session-dialog { width: min(480px, 92vw); }
+.session-dialog .session-date-fields label { display: grid; margin: var(--sp-3) 0 0; }
+.session-dialog .session-date-fields + p { margin-top: var(--sp-2); }
+.session-dialog .session-clean { display: flex; }
+.session-dialog .session-clean input { width: auto; margin: 0; }
+#sessionArchiveFeedback:not(:empty) { margin-top: var(--sp-2); }
 .preset-dialog-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 .preset-dialog-top h2 { margin: 0; }
 .preset-list {

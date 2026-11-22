@@ -14,6 +14,9 @@ import (
 var (
 	environmentContext = regexp.MustCompile(`(?s)<environment_context>.*?</environment_context>\s*`)
 	attachmentHeading  = regexp.MustCompile(`(?i)^## .+\.(png|jpe?g|gif|webp):\s+\S`)
+	cindySpeaker       = regexp.MustCompile(`(?m)^\[发言人\][ \t]*([^(@·\r\n]+)[^\r\n]*\r?\n`)
+	cindyNote          = regexp.MustCompile(`(?m)^\[(?:渠道说明|UI language)\][^\n]*\n?`)
+	cindyMeta          = regexp.MustCompile(`(?s)<group_chat_context>.*?</group_chat_context>\s*|<group_chat_attachments>.*?</group_chat_attachments>\s*|<reply_context>.*?</reply_context>\s*|<bot_persona>.*?</bot_persona>\s*|<group_history_result>.*?</group_history_result>\s*`)
 )
 
 func writeCleanMarkdown(w io.Writer, s sessions.Session, read func(func(sessions.Part) bool) error) error {
@@ -49,13 +52,7 @@ func writeCleanMarkdown(w io.Writer, s sessions.Session, read func(func(sessions
 			section++
 			role = part.Role
 		}
-		if part.Kind != "text" && !(role == "user" && part.Kind == "context") {
-			return true
-		}
-		text := strings.TrimSpace(part.Text)
-		if role == "user" {
-			text = cleanQuestion(text)
-		}
+		text := cleanMarkdownText(part)
 		if text == "" {
 			return true
 		}
@@ -81,6 +78,31 @@ func writeCleanMarkdown(w io.Writer, s sessions.Session, read func(func(sessions
 		return writeErr
 	}
 	return out.Flush()
+}
+
+func cleanMarkdownText(part sessions.Part) string {
+	switch {
+	case part.Role == "user" && (part.Kind == "text" || part.Kind == "context"):
+		return cleanQuestion(part.Text)
+	case part.Role == "assistant" && part.Kind == "text":
+		return strings.TrimSpace(part.Text)
+	default:
+		return ""
+	}
+}
+
+// A Telegram turn may include a copy of the surrounding chat, including earlier dates.
+func cleanDatedCindyQuestion(text string) string {
+	sender := ""
+	if marker := cindySpeaker.FindStringSubmatchIndex(text); marker != nil {
+		sender = strings.TrimSpace(text[marker[2]:marker[3]])
+		text = text[marker[1]:]
+	}
+	text = cleanQuestion(cindyNote.ReplaceAllString(cindyMeta.ReplaceAllString(text, ""), ""))
+	if text != "" && sender != "" {
+		return "发言人：" + sender + "\n\n" + text
+	}
+	return text
 }
 
 func cleanQuestion(text string) string {

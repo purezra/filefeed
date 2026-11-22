@@ -1,5 +1,11 @@
 package sessions
 
+import (
+	"encoding/json"
+	"io"
+	"time"
+)
+
 // FileFeedParts exposes the same uncapped message stream that WriteMarkdown
 // reads. FileFeed selects which message types to include in its clean export.
 func FileFeedParts(s Session, each func(Part) bool) error {
@@ -10,4 +16,32 @@ func FileFeedParts(s Session, each func(Part) bool) error {
 		return ErrNoTranscript
 	}
 	return readTranscript(s, func(_ bool, part Part) bool { return each(part) })
+}
+
+func FileFeedDatedParts(s Session, each func(time.Time, Part) bool) error {
+	if !Reads(s.Agent) {
+		return ErrNotRead
+	}
+	if s.Agent != "cindy" || s.Path == "" {
+		return ErrNoTranscript
+	}
+	return piTranscriptEntries(s.Path, func(entry piEntry, _ bool, part Part) bool {
+		if entry.Type != "message" {
+			return true
+		}
+		var timestamp string
+		_ = json.Unmarshal(entry.Timestamp, &timestamp)
+		at, err := time.Parse(time.RFC3339Nano, timestamp)
+		if err != nil && entry.Message != nil {
+			var millis float64
+			if json.Unmarshal(entry.Message.Timestamp, &millis) == nil && millis > 0 {
+				at = time.UnixMilli(int64(millis))
+			}
+		}
+		return at.IsZero() || each(at, part)
+	})
+}
+
+func FileFeedWriteMarkdown(w io.Writer, s Session, name string, read func(func(Part) bool) error) error {
+	return writeMarkdown(w, s, name, "File", s.Path, false, read)
 }

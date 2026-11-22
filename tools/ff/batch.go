@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yetone/magpie/internal/sessions"
 )
@@ -23,8 +25,11 @@ type batchEntry struct {
 type batchManifest struct {
 	Output  string       `json:"output"`
 	Zip     bool         `json:"zip"`
+	Merge   bool         `json:"merge"`
 	Clean   bool         `json:"clean"`
 	Name    string       `json:"name"`
+	From    string       `json:"from"`
+	To      string       `json:"to"`
 	Entries []batchEntry `json:"entries"`
 }
 
@@ -33,12 +38,11 @@ type batchResult struct {
 	Matched  int      `json:"matched"`
 	Exported int      `json:"exported"`
 	Skipped  int      `json:"skipped"`
+	Empty    int      `json:"empty"`
 	Errors   []string `json:"errors,omitempty"`
 }
 
-// exportBatch writes the sessions named in a manifest as Markdown files or as
-// one ZIP. Each session is written independently, so a reader that only has
-// metadata is reported and skipped instead of failing the whole batch.
+// Stage each conversation so a reader error can't leave a partial entry.
 func exportBatch(manifestPath string) (batchResult, error) {
 	var result batchResult
 	data, err := os.ReadFile(manifestPath)
@@ -55,10 +59,19 @@ func exportBatch(manifestPath string) (batchResult, error) {
 	if len(manifest.Entries) == 0 {
 		return result, fmt.Errorf("没有可导出的会话")
 	}
+	dates, err := parseDateRange(manifest.From, manifest.To)
+	if err != nil {
+		return result, err
+	}
 	result.Matched = len(manifest.Entries)
-	if manifest.Zip {
+	if manifest.Zip || manifest.Merge {
 		err = writeAtomic(manifest.Output, func(w io.Writer) error {
-			archive := zip.NewWriter(w)
+			var archive *zip.Writer
+			if manifest.Zip {
+				archive = zip.NewWriter(w)
+			} else if _, err := fmt.Fprintf(w, "# %s\n", safeBatchName(manifest.Name)); err != nil {
+				return err
+			}
 			for i, entry := range manifest.Entries {
 				s, ok := findBatchSession(entry.Key)
 				if !ok {
@@ -69,14 +82,28 @@ func exportBatch(manifestPath string) (batchResult, error) {
 					result.skip(entry, "当前读取器仅支持该会话的元数据")
 					continue
 				}
-				// Stage each export so a reader error can't leave a partial entry.
+				if manifest.Merge && entry.Name != "" {
+					s.Title = entry.Name
+					if entry.Folder != "" {
+						s.Title = entry.Folder + " · " + s.Title
+					}
+				}
 				var body bytes.Buffer
-				if err := writeMarkdown(&body, s, manifest.Clean); err != nil {
-					result.skip(entry, err.Error())
+				if err := writeMarkdown(&body, s, manifest.Clean, dates); err != nil {
+					result.skipWrite(entry, err)
 					continue
 				}
-				out, err := archive.Create(zipEntryName(manifest.Name, entry.Folder, batchFilename(i, entry, s)))
-				if err != nil {
+				out := w
+				if archive != nil {
+					if dates.active() && s.Agent == "cindy" {
+						s.Last = time.Time{}
+					}
+					var err error
+					out, err = archive.Create(zipEntryName(manifest.Name, entry.Folder, batchFilename(i, entry, s)))
+					if err != nil {
+						return err
+					}
+				} else if _, err := io.WriteString(w, "\n---\n\n"); err != nil {
 					return err
 				}
 				if _, err := out.Write(body.Bytes()); err != nil {
@@ -84,7 +111,13 @@ func exportBatch(manifestPath string) (batchResult, error) {
 				}
 				result.Exported++
 			}
-			return archive.Close()
+			if result.Exported == 0 {
+				return errNoDatedContent
+			}
+			if archive != nil {
+				return archive.Close()
+			}
+			return nil
 		})
 	} else {
 		if err := os.MkdirAll(manifest.Output, 0o700); err != nil {
@@ -109,16 +142,29 @@ func exportBatch(manifestPath string) (batchResult, error) {
 				continue
 			}
 			if err := writeAtomic(filepath.Join(dir, batchFilename(i, entry, s)), func(w io.Writer) error {
-				return writeMarkdown(w, s, manifest.Clean)
+				return writeMarkdown(w, s, manifest.Clean, dates)
 			}); err != nil {
-				result.skip(entry, err.Error())
+				result.skipWrite(entry, err)
 				continue
 			}
 			result.Exported++
 		}
 	}
-	result.Path = manifest.Output
-	return result, nil
+	if errors.Is(err, errNoDatedContent) {
+		return result, nil
+	}
+	if err == nil && (!dates.active() || result.Exported > 0) {
+		result.Path = manifest.Output
+	}
+	return result, err
+}
+
+func (r *batchResult) skipWrite(entry batchEntry, err error) {
+	if errors.Is(err, errNoDatedContent) {
+		r.Empty++
+		return
+	}
+	r.skip(entry, err.Error())
 }
 
 func (r *batchResult) skip(entry batchEntry, reason string) {

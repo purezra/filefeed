@@ -148,18 +148,60 @@ func addMarkdown(archive *zip.Writer, dir string, n int, s sessions.Session, ent
 	return nil
 }
 
-func writeMarkdown(w io.Writer, s sessions.Session, clean bool) error {
-	if clean {
-		return writeCleanMarkdown(w, s, func(each func(sessions.Part) bool) error {
-			return sessions.FileFeedParts(s, each)
-		})
+func writeMarkdown(w io.Writer, s sessions.Session, clean bool, dates dateRange) error {
+	if !dates.active() || s.Agent != "cindy" {
+		if dates.active() && !dates.includes(s.Start) {
+			return errNoDatedContent
+		}
+		if clean {
+			return writeCleanMarkdown(w, s, func(each func(sessions.Part) bool) error {
+				return sessions.FileFeedParts(s, each)
+			})
+		}
+		return sessions.WriteMarkdown(w, s, rowAgent(s))
 	}
-	return sessions.WriteMarkdown(w, s, rowAgent(s))
+	var parts []sessions.Part
+	hasContent := false
+	s.Start, s.Last = time.Time{}, time.Time{}
+	if err := dates.parts(s, func(at time.Time, part sessions.Part) bool {
+		if clean && part.Role == "user" && part.Kind == "text" {
+			part.Text = cleanDatedCindyQuestion(part.Text)
+		}
+		parts = append(parts, part)
+		if clean && cleanMarkdownText(part) == "" {
+			return true
+		}
+		hasContent = true
+		if s.Start.IsZero() || at.Before(s.Start) {
+			s.Start = at
+		}
+		if at.After(s.Last) {
+			s.Last = at
+		}
+		return true
+	}); err != nil {
+		return err
+	}
+	if !hasContent {
+		return errNoDatedContent
+	}
+	read := func(each func(sessions.Part) bool) error {
+		for _, part := range parts {
+			if !each(part) {
+				break
+			}
+		}
+		return nil
+	}
+	if clean {
+		return writeCleanMarkdown(w, s, read)
+	}
+	return sessions.FileFeedWriteMarkdown(w, s, rowAgent(s), read)
 }
 
-func exportMarkdown(s sessions.Session, path string, clean bool) error {
+func exportMarkdown(s sessions.Session, path string, clean bool, dates dateRange) error {
 	return writeAtomic(path, func(w io.Writer) error {
-		return writeMarkdown(w, s, clean)
+		return writeMarkdown(w, s, clean, dates)
 	})
 }
 

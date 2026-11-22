@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,24 +18,25 @@ import (
 )
 
 type AgentSession struct {
-	Key      string   `json:"key"`
-	Agent    string   `json:"agent"`
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Folder   string   `json:"folder"`
-	Path     string   `json:"path"`
-	Started  string   `json:"started"`
-	Updated  string   `json:"updated"`
-	Models   []string `json:"models"`
-	Size     int64    `json:"size"`
-	Messages int      `json:"messages"`
-	Input    int      `json:"input"`
-	Output   int      `json:"output"`
-	Cache    int      `json:"cache"`
-	Readable bool     `json:"readable"`
-	Channel  string   `json:"channel,omitempty"`
-	TopicID  string   `json:"topicId,omitempty"`
-	Topic    string   `json:"topic,omitempty"`
+	Key       string   `json:"key"`
+	Agent     string   `json:"agent"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Folder    string   `json:"folder"`
+	Path      string   `json:"path"`
+	Started   string   `json:"started"`
+	Updated   string   `json:"updated"`
+	RangeLast string   `json:"rangeLast,omitempty"`
+	Models    []string `json:"models"`
+	Size      int64    `json:"size"`
+	Messages  int      `json:"messages"`
+	Input     int      `json:"input"`
+	Output    int      `json:"output"`
+	Cache     int      `json:"cache"`
+	Readable  bool     `json:"readable"`
+	Channel   string   `json:"channel,omitempty"`
+	TopicID   string   `json:"topicId,omitempty"`
+	Topic     string   `json:"topic,omitempty"`
 }
 
 type AgentPart struct {
@@ -46,8 +48,18 @@ type AgentPart struct {
 }
 
 type AgentTranscript struct {
-	Parts []AgentPart `json:"parts"`
-	Cut   bool        `json:"cut"`
+	Parts  []AgentPart `json:"parts"`
+	Before int         `json:"before"`
+}
+
+type AgentDateRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type AgentDateMatches struct {
+	Rows    []AgentSession `json:"rows"`
+	Skipped int            `json:"skipped"`
 }
 
 type AgentArchive struct {
@@ -67,6 +79,7 @@ type AgentBatch struct {
 	Matched  int    `json:"matched"`
 	Exported int    `json:"exported"`
 	Skipped  int    `json:"skipped"`
+	Empty    int    `json:"empty"`
 }
 
 func (Service) SessionCLI() (string, error) {
@@ -117,9 +130,19 @@ func (s Service) AgentSessions(ctx context.Context) ([]AgentSession, error) {
 	return rows, err
 }
 
-func (s Service) AgentTranscript(ctx context.Context, key string) (AgentTranscript, error) {
+func (s Service) AgentDateSessions(ctx context.Context, agent string, dates AgentDateRange) (AgentDateMatches, error) {
+	var result AgentDateMatches
+	err := s.sessionCommand(ctx, &result, "list-range", agent, dates.From, dates.To)
+	return result, err
+}
+
+func (s Service) AgentTranscript(ctx context.Context, key string, clean bool, dates AgentDateRange, before int) (AgentTranscript, error) {
 	var transcript AgentTranscript
-	err := s.sessionCommand(ctx, &transcript, "read", key)
+	mode := "full"
+	if clean {
+		mode = "clean"
+	}
+	err := s.sessionCommand(ctx, &transcript, "read", key, mode, dates.From, dates.To, strconv.Itoa(before))
 	return transcript, err
 }
 
@@ -140,7 +163,7 @@ func sessionExportFilename(agent string, exportedAt time.Time, clean bool) strin
 	return name + ".md"
 }
 
-func (s Service) ExportAgentSession(ctx context.Context, key, agent string, clean bool) (string, error) {
+func (s Service) ExportAgentSession(ctx context.Context, key, agent string, clean bool, dates AgentDateRange) (string, error) {
 	command := "export"
 	if clean {
 		command = "export-clean"
@@ -153,46 +176,45 @@ func (s Service) ExportAgentSession(ctx context.Context, key, agent string, clea
 	if err != nil || path == "" {
 		return "", err
 	}
-	if err := s.sessionCommand(ctx, nil, command, key, path); err != nil {
+	if err := s.sessionCommand(ctx, nil, command, key, path, dates.From, dates.To); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
-func (s Service) ExportAgentSessions(ctx context.Context, group string, items []AgentExportItem, clean, zip bool) (AgentBatch, error) {
+func (s Service) ExportAgentSessions(ctx context.Context, group string, items []AgentExportItem, clean bool, format string, dates AgentDateRange) (AgentBatch, error) {
 	var result AgentBatch
 	if len(items) == 0 {
 		return result, errors.New("没有可导出的会话")
 	}
 	var output string
-	if zip {
+	switch format {
+	case "zip", "markdown":
+		extension, title, filter := "zip", "导出会话压缩包", "ZIP"
+		if format == "markdown" {
+			extension, title, filter = "md", "合并导出会话 Markdown", "Markdown"
+		}
 		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-			Parent: mygo.CallerWindow(ctx), Title: "导出会话压缩包",
-			DefaultPath: batchExportFilename(group, time.Now()),
-			Filters:     []mygo.FileFilter{{Name: "ZIP", Extensions: []string{"zip"}}},
+			Parent: mygo.CallerWindow(ctx), Title: title,
+			DefaultPath: batchExportFilename(group, time.Now(), extension),
+			Filters:     []mygo.FileFilter{{Name: filter, Extensions: []string{extension}}},
 		})
 		if err != nil || path == "" {
 			return result, err
 		}
 		output = path
-	} else {
-		start, _ := mygo.App.Path(mygo.PathDocuments)
-		dirs, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent: mygo.CallerWindow(ctx), Title: "选择导出目录", DefaultPath: start,
-			Directory: true, CreateDirectories: true,
-		})
-		if err != nil || len(dirs) == 0 {
-			return result, err
-		}
-		output = dirs[0]
+	default:
+		return result, errors.New("无效的会话导出格式")
 	}
 	manifest, err := json.Marshal(struct {
+		AgentDateRange
 		Output  string            `json:"output"`
 		Zip     bool              `json:"zip"`
+		Merge   bool              `json:"merge"`
 		Clean   bool              `json:"clean"`
 		Name    string            `json:"name"`
 		Entries []AgentExportItem `json:"entries"`
-	}{output, zip, clean, group, items})
+	}{dates, output, format == "zip", format == "markdown", clean, group, items})
 	if err != nil {
 		return result, err
 	}
@@ -212,7 +234,7 @@ func (s Service) ExportAgentSessions(ctx context.Context, group string, items []
 	return result, err
 }
 
-func batchExportFilename(group string, at time.Time) string {
+func batchExportFilename(group string, at time.Time, extension string) string {
 	name := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == ' ' {
 			return r
@@ -228,7 +250,7 @@ func batchExportFilename(group string, at time.Time) string {
 	if name == "" {
 		name = "filefeed"
 	}
-	return name + "_" + at.Format("200601021504") + ".zip"
+	return name + "_" + at.Format("200601021504") + "." + extension
 }
 
 func (s Service) SaveAgentArchive(ctx context.Context, agent, date string) (AgentArchive, error) {

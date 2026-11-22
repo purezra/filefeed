@@ -15,6 +15,17 @@ export interface AgentBatch {
   matched: number;
   exported: number;
   skipped: number;
+  empty: number;
+}
+
+export interface AgentDateMatches {
+  rows: AgentSession[];
+  skipped: number;
+}
+
+export interface AgentDateRange {
+  from: string;
+  to: string;
 }
 
 export interface AgentExportItem {
@@ -40,6 +51,7 @@ export interface AgentSession {
   path: string;
   started: string;
   updated: string;
+  rangeLast?: string;
   models: string[];
   size: number;
   messages: number;
@@ -54,7 +66,7 @@ export interface AgentSession {
 
 export interface AgentTranscript {
   parts: AgentPart[];
-  cut: boolean;
+  before: number;
 }
 
 /** Config 是持久化配置。 */
@@ -165,8 +177,9 @@ export interface VideoFilter {
 
 /** Service 的方法会被 mygo generate 变成前端的类型化函数。 */
 export const Service = {
+  agentDateSessions: bind<[string, AgentDateRange], AgentDateMatches>("Service.AgentDateSessions", (agent: string, dates: AgentDateRange) => [agent, dates]),
   agentSessions: bind<[], AgentSession[]>("Service.AgentSessions", () => []),
-  agentTranscript: bind<[string], AgentTranscript>("Service.AgentTranscript", (key: string) => [key]),
+  agentTranscript: bind<[string, boolean, AgentDateRange, number], AgentTranscript>("Service.AgentTranscript", (key: string, clean: boolean, dates: AgentDateRange, before: number) => [key, clean, dates, before]),
   /** Config 返回当前配置（文件不存在时返回默认值）。 */
   config: bind<[], Config>("Service.Config", () => []),
   /**
@@ -179,8 +192,8 @@ export const Service = {
    * 路径写进临时文件再由 PowerShell 读，避免命令行长度限制和转义问题。
    */
   deleteFiles: bind<[string[]], string>("Service.DeleteFiles", (paths: string[]) => [paths]),
-  exportAgentSession: bind<[string, string, boolean], string>("Service.ExportAgentSession", (key: string, agent: string, clean: boolean) => [key, agent, clean]),
-  exportAgentSessions: bind<[string, AgentExportItem[], boolean, boolean], AgentBatch>("Service.ExportAgentSessions", (group: string, items: AgentExportItem[], clean: boolean, zip: boolean) => [group, items, clean, zip]),
+  exportAgentSession: bind<[string, string, boolean, AgentDateRange], string>("Service.ExportAgentSession", (key: string, agent: string, clean: boolean, dates: AgentDateRange) => [key, agent, clean, dates]),
+  exportAgentSessions: bind<[string, AgentExportItem[], boolean, string, AgentDateRange], AgentBatch>("Service.ExportAgentSessions", (group: string, items: AgentExportItem[], clean: boolean, format: string, dates: AgentDateRange) => [group, items, clean, format, dates]),
   /**
    * Open 用系统默认程序打开文件，返回错误信息（空串表示成功）。
    * 注意：不能给 GUI 子进程设 HideWindow，否则打开的程序窗口会是隐藏的。
