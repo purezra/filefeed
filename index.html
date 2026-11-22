@@ -7,15 +7,18 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <header>
+    <header id="fileHeader">
       <div class="bar">
         <div class="brand">
           <span class="logo">◈</span>
           <span>FileFeed</span>
-          <span class="sub" id="status">就绪</span>
         </div>
+        <nav class="seg app-pages" aria-label="页面">
+          <button id="showFiles" class="on" aria-pressed="true">文件看板</button>
+          <button id="showSessions" aria-pressed="false">Agent 会话</button>
+        </nav>
+        <span class="muted small" id="status">就绪</span>
         <div class="grow"></div>
-        <button class="btn ghost" id="btn-presets">方案</button>
         <button class="btn ghost" id="btn-settings">设置</button>
         <button class="btn ghost" id="btn-refresh" title="重新搜索（Ctrl+R）">刷新</button>
         <button class="btn primary" id="btn-search">搜索</button>
@@ -87,6 +90,12 @@
           </div>
         </div>
       </div>
+
+      <section class="preset-bar" aria-labelledby="presetBarLabel">
+        <span id="presetBarLabel" class="preset-bar-label">筛选方案</span>
+        <div id="presetShortcuts" class="preset-shortcuts" role="group" aria-label="已保存的筛选方案"></div>
+        <button type="button" id="btn-presets" class="btn ghost preset-manage" aria-haspopup="dialog" aria-controls="modalPresets" disabled>保存当前方案</button>
+      </section>
 
       <div id="mediaFilters" class="media-filters hide">
         <fieldset id="imageFilters" class="media-filter hide" disabled>
@@ -172,6 +181,57 @@
       <span id="footRange" class="muted"></span>
     </footer>
 
+    <main id="sessionPage" class="hide" aria-label="Agent 会话">
+      <div class="session-controls">
+        <div class="session-filters">
+          <select id="sessionAgent" class="input sel" aria-label="筛选 Agent"><option value="all">全部 Agent</option></select>
+          <label id="cindyClassifyLabel" class="session-clean small" title="按电脑端、Telegram Bot 和群话题树形归类">
+            <input id="cindyClassify" type="checkbox" checked />对话分类
+          </label>
+          <input id="sessionSearch" class="input" type="search" aria-label="搜索会话" placeholder="搜索标题、目录、话题或会话 ID" />
+          <button id="sessionRefresh" class="btn ghost">刷新</button>
+        </div>
+        <div class="session-archive">
+          <label class="muted small" for="sessionDate">归档日期</label>
+          <input id="sessionDate" class="input" type="date" required />
+          <button id="copySessionCLI" class="btn ghost" title="复制 PowerShell 归档命令">复制命令</button>
+          <button id="saveSessionDay" class="btn primary">保存当天会话</button>
+        </div>
+      </div>
+      <div class="session-status">
+        <span id="sessionCount" class="muted small" role="status"></span>
+        <span id="sessionFeedback" class="small" role="status"></span>
+        <button id="showSessionArchive" class="btn tiny ghost hide">查看归档位置</button>
+      </div>
+      <div id="sessionLayout" class="session-layout">
+        <section class="session-browser" aria-label="会话列表">
+          <div id="sessionList"></div>
+          <button id="moreSessions" class="btn ghost hide">加载更多</button>
+        </section>
+        <section id="sessionDetail" class="session-detail" aria-label="会话内容">
+          <div id="sessionEmpty" class="session-empty muted">选择一条会话查看内容</div>
+          <div id="sessionSelected" class="hide">
+            <div class="session-detail-header">
+              <div class="session-detail-actions">
+                <button id="closeSessionDetail" class="btn tiny ghost">返回列表</button>
+                <span id="sessionDetailAgent" class="muted small"></span>
+                <div class="grow"></div>
+                <button id="showSessionSource" class="btn tiny ghost">源文件位置</button>
+                <label class="session-clean small"><input id="cleanSessionExport" type="checkbox" />纯净显示</label>
+                <button id="exportSession" class="btn tiny">导出 Markdown</button>
+              </div>
+              <h2 id="sessionTitle" tabindex="-1"></h2>
+              <details class="session-detail-meta">
+                <summary>会话信息</summary>
+                <dl id="sessionMeta"></dl>
+              </details>
+            </div>
+            <div id="sessionTranscript" aria-live="polite"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
     <!-- 设置 -->
     <div class="modal hide" id="modalSettings">
       <div class="sheet">
@@ -215,21 +275,18 @@
       </div>
     </div>
 
-    <!-- 方案 -->
-    <div class="modal hide" id="modalPresets">
-      <div class="sheet">
-        <h2>筛选方案</h2>
-        <p class="muted small">把当前的类型、时间、关键词、排序存成一套方案，下次一键切换。</p>
-        <div id="presetList" class="preset-list"></div>
-        <div class="preset-add">
-          <input id="presetName" class="input" placeholder="方案名称，例如「本周 magpie 文档」" />
-          <button class="btn primary" id="btnAddPreset">保存当前</button>
-        </div>
-        <div class="foot">
-          <button class="btn ghost" data-close="modalPresets">关闭</button>
-        </div>
+    <dialog class="sheet preset-dialog" id="modalPresets" aria-labelledby="presetDialogTitle">
+      <div class="preset-dialog-top">
+        <h2 id="presetDialogTitle">管理筛选方案</h2>
+        <form method="dialog"><button class="btn ghost">关闭</button></form>
       </div>
-    </div>
+      <div id="presetList" class="preset-list"></div>
+      <form id="presetForm" class="preset-add">
+        <input id="presetName" class="input" aria-label="方案名称" placeholder="输入方案名称" required />
+        <button type="submit" class="btn primary" id="btnAddPreset">保存当前条件</button>
+      </form>
+      <div id="presetFeedback" class="preset-feedback" role="status"></div>
+    </dialog>
 
     <div id="toast"></div>
     <script type="module" src="./src/main.ts"></script>

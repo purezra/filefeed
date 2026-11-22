@@ -4,6 +4,8 @@ node_modules/
 /.mygo/
 /.agents/
 /vendor/
+/tools/ff/vendor/
+/resources/windows-*/ff.exe
 mygo_windows_*.syso
 /final.png
 /ui*.png

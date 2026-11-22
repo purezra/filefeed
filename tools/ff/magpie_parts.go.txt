@@ -1,0 +1,13 @@
+package sessions
+
+// FileFeedParts exposes the same uncapped message stream that WriteMarkdown
+// reads. FileFeed selects which message types to include in its clean export.
+func FileFeedParts(s Session, each func(Part) bool) error {
+	if !Reads(s.Agent) {
+		return ErrNotRead
+	}
+	if !readable(s) || s.Path == "" {
+		return ErrNoTranscript
+	}
+	return readTranscript(s, func(_ bool, part Part) bool { return each(part) })
+}

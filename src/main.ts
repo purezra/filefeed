@@ -1,4 +1,5 @@
 import { Service, type SearchQuery, type Config, type Preset, type TypeGroup, type FileItem, type ImageFilter, type VideoFilter } from "./mygo";
+import { bindSessions } from "./agent-sessions";
 
 // ------------------------------------------------------------------ 常量
 const TYPE_GROUPS: Record<string, string[]> = {
@@ -50,11 +51,15 @@ const listOffsets = new Map<string, number>();
 const grid = document.getElementById("grid")!;
 const waterfall = document.getElementById("waterfall")!;
 const formatNav = document.getElementById("formatNav")!;
+const presetShortcuts = document.getElementById("presetShortcuts")!;
+const presetDialog = document.querySelector<HTMLDialogElement>("#modalPresets")!;
 let searchPending = false;
 let renderedQuery = "";
 let renderedGroups = "";
 let refreshTimer: number | undefined;
 let quickDraft: Record<string, string[]> = {};
+let activePreset: { identity: string; filters: string } | null = null;
+let savingPresets = false;
 
 // ------------------------------------------------------------------ 小工具
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -186,6 +191,7 @@ function renderChips() {
     button.setAttribute("aria-pressed", String(active));
   });
   updateMediaVisibility();
+  updatePresetHighlight();
   const box = $("#typeChips");
   box.innerHTML = "";
   if (!state.exts.length) {
@@ -323,7 +329,7 @@ function scheduleAutoRefresh(seconds: number) {
   window.clearInterval(refreshTimer);
   $("#btn-refresh").title = `立即刷新（Ctrl+R） · 自动每 ${seconds} 秒`;
   refreshTimer = window.setInterval(() => {
-    if (!document.hidden && !state.busy && state.exts.length) void runSearch(false);
+    if (!document.hidden && !document.body.classList.contains("show-sessions") && !state.busy && state.exts.length) void runSearch(false);
   }, seconds * 1000);
 }
 
@@ -637,6 +643,7 @@ function addQuickType() {
 async function openSettings() {
   const cfg = await Service.config();
   state.config = cfg;
+  renderPresetBar();
   $("#cfgExts").value = cfg.exts.join(", ");
   $("#cfgExclude").value = cfg.exclude.join("\n");
   $("#cfgLimit").value = String(cfg.limit);
@@ -682,6 +689,7 @@ async function saveSettings() {
   scheduleAutoRefresh(cfg.refreshSeconds);
   $("#modalSettings").classList.add("hide");
   renderChips();
+  renderPresetBar();
   toast("设置已保存");
   void runSearch();
 }
@@ -700,44 +708,112 @@ function presetDesc(q: SearchQuery) {
   return parts.join(" · ");
 }
 
-async function openPresets() {
-  const cfg = state.config ?? (await Service.config());
-  state.config = cfg;
-  renderPresetList(cfg.presets ?? []);
-  $("#modalPresets").classList.remove("hide");
+function presetFilterKey() {
+  const { exclude, limit, ...filters } = buildQuery();
+  return JSON.stringify(filters);
+}
+
+function updatePresetHighlight() {
+  const index = activePreset && activePreset.filters === presetFilterKey()
+    ? state.config?.presets?.findIndex((p) => JSON.stringify(p) === activePreset?.identity)
+    : -1;
+  presetShortcuts.querySelectorAll(".preset-shortcut").forEach((button, i) => {
+    button.setAttribute("aria-pressed", String(i === index));
+  });
+}
+
+function markActivePreset(preset: Preset) {
+  activePreset = { identity: JSON.stringify(preset), filters: presetFilterKey() };
+  updatePresetHighlight();
+}
+
+function renderPresetBar() {
+  const list = state.config?.presets ?? [];
+  const scrollLeft = presetShortcuts.scrollLeft;
+  presetShortcuts.replaceChildren();
+  if (!list.length) presetShortcuts.appendChild(el("span", "muted small", "暂无已保存的方案"));
+  for (const preset of list) {
+    const button = el("button", "btn preset-shortcut", preset.name);
+    button.type = "button";
+    button.title = `${preset.name}\n${presetDesc(preset.query)}`;
+    button.onclick = () => usePreset(preset);
+    presetShortcuts.appendChild(button);
+  }
+  presetShortcuts.scrollLeft = scrollLeft;
+  $("#btn-presets").textContent = list.length ? "管理方案" : "保存当前方案";
+  $("#btn-presets").disabled = false;
+  updatePresetHighlight();
+}
+
+function closePresetsToShortcut() {
+  if (!presetDialog.open) return;
+  presetDialog.close();
+  presetShortcuts.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+}
+
+function usePreset(preset: Preset) {
+  applyQuery(preset.query);
+  markActivePreset(preset);
+  closePresetsToShortcut();
+  void runSearch();
+}
+
+function openPresets() {
+  if (presetDialog.open) return;
+  renderPresetList(state.config?.presets ?? []);
+  $("#presetFeedback").textContent = "";
+  presetDialog.showModal();
+  $("#presetName").focus();
 }
 
 function renderPresetList(list: Preset[]) {
   const box = $("#presetList");
-  box.innerHTML = "";
+  box.replaceChildren();
   if (!list.length) {
-    box.appendChild(el("div", "muted small", "还没有方案。配置好条件后点「保存当前」。"));
+    box.appendChild(el("div", "muted small", "暂无已保存的方案"));
     return;
   }
   list.forEach((p, i) => {
     const item = el("div", "preset-item");
-    const nm = el("div");
-    nm.appendChild(el("div", "nm", p.name));
-    nm.appendChild(el("div", "desc", presetDesc(p.query)));
-    item.appendChild(nm);
-
-    const apply = el("button", "btn tiny primary", "应用");
-    apply.onclick = () => {
-      applyQuery(p.query);
-      $("#modalPresets").classList.add("hide");
-      void runSearch();
-    };
-    const del = el("button", "btn tiny ghost", "删除");
+    const info = el("span");
+    info.append(el("span", "nm", p.name), el("span", "desc", presetDesc(p.query)));
+    const apply = el("button", "btn preset-apply");
+    apply.type = "button";
+    apply.append(info, el("span", "preset-use", "切换"));
+    apply.onclick = () => usePreset(p);
+    const del = el("button", "btn ghost preset-delete", "删除");
+    del.type = "button";
+    del.setAttribute("aria-label", `删除方案 ${p.name}`);
     del.onclick = async () => {
-      const cfg = state.config!;
-      const next = (cfg.presets ?? []).filter((_, idx) => idx !== i);
-      state.config = await Service.saveConfig({ ...cfg, presets: next });
-      renderPresetList(state.config.presets ?? []);
-      toast("已删除");
+      if (!(await savePresetList(list.filter((_, idx) => idx !== i)))) return;
+      if (presetDialog.open) {
+        renderPresetList(state.config?.presets ?? []);
+        $("#presetFeedback").textContent = `已删除「${p.name}」`;
+        const actions = presetDialog.querySelectorAll<HTMLButtonElement>(".preset-apply");
+        (actions[i] ?? actions[i - 1] ?? $("#presetName")).focus();
+      }
     };
     item.append(apply, del);
     box.appendChild(item);
   });
+}
+
+async function savePresetList(presets: Preset[]) {
+  if (!state.config || savingPresets) return false;
+  savingPresets = true;
+  $("#btnAddPreset").disabled = true;
+  $("#presetFeedback").textContent = "";
+  try {
+    state.config = await Service.saveConfig({ ...state.config, presets });
+    renderPresetBar();
+    return true;
+  } catch {
+    $("#presetFeedback").textContent = "保存方案失败，请重试";
+    return false;
+  } finally {
+    $("#btnAddPreset").disabled = false;
+    savingPresets = false;
+  }
 }
 
 function applyQuery(q: SearchQuery) {
@@ -772,15 +848,15 @@ function applyQuery(q: SearchQuery) {
 
 async function addPreset() {
   const name = $("#presetName").value.trim();
-  if (!name) { toast("先给方案起个名字"); return; }
+  if (!name) { $("#presetFeedback").textContent = "请输入方案名称"; return; }
   const query = buildQuery();
   const validationError = mediaQueryError(query);
-  if (validationError) { toast(validationError); return; }
-  const cfg = state.config ?? (await Service.config());
-  const presets = [...(cfg.presets ?? []), { name, query }];
-  state.config = await Service.saveConfig({ ...cfg, presets });
+  if (validationError) { $("#presetFeedback").textContent = validationError; return; }
+  if (!(await savePresetList([...(state.config?.presets ?? []), { name, query }]))) return;
   $("#presetName").value = "";
-  renderPresetList(state.config.presets ?? []);
+  const saved = state.config?.presets?.at(-1);
+  if (saved) markActivePreset(saved);
+  closePresetsToShortcut();
   toast("方案已保存");
 }
 
@@ -799,6 +875,7 @@ function bind() {
         $("#from").value = state.from;
         $("#to").value = state.to;
       }
+      updatePresetHighlight();
     });
   });
 
@@ -817,9 +894,15 @@ function bind() {
   $("#btn-search").addEventListener("click", () => void runSearch());
   $("#btn-refresh").addEventListener("click", () => void runSearch());
   $("#btn-settings").addEventListener("click", () => void openSettings());
-  $("#btn-presets").addEventListener("click", () => void openPresets());
+  $("#btn-presets").addEventListener("click", openPresets);
   $("#btnSaveCfg").addEventListener("click", () => void saveSettings());
-  $("#btnAddPreset").addEventListener("click", () => void addPreset());
+  $("#presetForm").addEventListener("submit", (event: SubmitEvent) => {
+    event.preventDefault();
+    void addPreset();
+  });
+  const header = document.querySelector("body > header")!;
+  header.addEventListener("input", updatePresetHighlight);
+  header.addEventListener("change", updatePresetHighlight);
   $("#btn-types").addEventListener("click", () => void openSettings());
   $("#cfgQuickGroup").addEventListener("change", renderQuickSettings);
   $("#cfgQuickAdd").addEventListener("click", addQuickType);
@@ -834,6 +917,7 @@ function bind() {
     button.onclick = () => {
       button.closest("fieldset")?.querySelectorAll("input").forEach((input) => { input.value = ""; });
       if (button.dataset.resetMedia === "image") $("#imageResolutionMode").value = "min";
+      updatePresetHighlight();
       void runSearch();
     };
   });
@@ -864,6 +948,7 @@ function bind() {
   });
 
   document.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (presetDialog.open || document.body.classList.contains("show-sessions")) return;
     if (e.key === "Escape") {
       document.querySelectorAll(".modal").forEach((m) => m.classList.add("hide"));
       if (sel.size) {
@@ -892,6 +977,7 @@ function bind() {
 // ------------------------------------------------------------------ 启动
 async function boot() {
   bind();
+  bindSessions(copyText, () => void runSearch(false));
   const cfg = await Service.config();
   state.config = cfg;
   state.exts = cfg.exts;
@@ -904,6 +990,7 @@ async function boot() {
   $("#to").value = state.to;
 
   renderChips();
+  renderPresetBar();
   scheduleAutoRefresh(cfg.refreshSeconds);
   await runSearch();
 }

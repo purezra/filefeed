@@ -4,6 +4,46 @@ import { bind } from "mygo-runtime";
 
 // ---- Types ----
 
+export interface AgentArchive {
+  path: string;
+  matched: number;
+  exported: number;
+}
+
+export interface AgentPart {
+  role: string;
+  kind: string;
+  name: string;
+  text: string;
+  cut: number;
+}
+
+export interface AgentSession {
+  key: string;
+  agent: string;
+  id: string;
+  title: string;
+  folder: string;
+  path: string;
+  started: string;
+  updated: string;
+  models: string[];
+  size: number;
+  messages: number;
+  input: number;
+  output: number;
+  cache: number;
+  readable: boolean;
+  channel?: string;
+  topicId?: string;
+  topic?: string;
+}
+
+export interface AgentTranscript {
+  parts: AgentPart[];
+  cut: boolean;
+}
+
 /** Config 是持久化配置。 */
 export interface Config {
   exts: string[];
@@ -112,6 +152,8 @@ export interface VideoFilter {
 
 /** Service 的方法会被 mygo generate 变成前端的类型化函数。 */
 export const Service = {
+  agentSessions: bind<[], AgentSession[]>("Service.AgentSessions", () => []),
+  agentTranscript: bind<[string], AgentTranscript>("Service.AgentTranscript", (key: string) => [key]),
   /** Config 返回当前配置（文件不存在时返回默认值）。 */
   config: bind<[], Config>("Service.Config", () => []),
   /**
@@ -124,6 +166,7 @@ export const Service = {
    * 路径写进临时文件再由 PowerShell 读，避免命令行长度限制和转义问题。
    */
   deleteFiles: bind<[string[]], string>("Service.DeleteFiles", (paths: string[]) => [paths]),
+  exportAgentSession: bind<[string, string, boolean], string>("Service.ExportAgentSession", (key: string, agent: string, clean: boolean) => [key, agent, clean]),
   /**
    * Open 用系统默认程序打开文件，返回错误信息（空串表示成功）。
    * 注意：不能给 GUI 子进程设 HideWindow，否则打开的程序窗口会是隐藏的。
@@ -131,8 +174,10 @@ export const Service = {
   open: bind<[string], string>("Service.Open", (path: string) => [path]),
   /** Reveal 在资源管理器里选中该文件。 */
   reveal: bind<[string], string>("Service.Reveal", (path: string) => [path]),
+  saveAgentArchive: bind<[string, string], AgentArchive>("Service.SaveAgentArchive", (agent: string, date: string) => [agent, date]),
   /** SaveConfig 写回配置。 */
   saveConfig: bind<[Config], Config>("Service.SaveConfig", (cfg: Config) => [cfg]),
   /** Search 执行一次检索。 */
   search: bind<[SearchQuery], SearchResult>("Service.Search", (q: SearchQuery) => [q]),
+  sessionCLI: bind<[], string>("Service.SessionCLI", () => []),
 } as const;
